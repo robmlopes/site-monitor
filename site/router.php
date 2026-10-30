@@ -1,8 +1,9 @@
 <?php
 // Router do servidor embutido (php -S localhost:8080 -t site site/router.php).
 // Faz o papel do Apache: carrega o agente, executa o .php certo e responde 404 para o resto.
-define('MONITOR_AUTO_HTTP', true); // mede file_get_contents()/fopen() em URLs sem mudar o código
-require __DIR__ . '/monitor/agent.php';
+// O mesmo loader que vai nos sites reais (aqui com MONITOR_HOME apontando para ../agent).
+putenv('MONITOR_HOME=' . dirname(__DIR__) . '/agent');
+require dirname(__DIR__) . '/agent/loader.php';
 
 $path = urldecode(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH));
 $file = realpath(__DIR__ . $path);
@@ -12,7 +13,7 @@ if ($file !== false && is_dir($file)) {
 }
 
 $inside = $file !== false && strpos($file, __DIR__) === 0;
-$blocked = strpos($path, '/monitor/data') === 0 || strpos($path, '/data/') === 0 || strpos($path, '/includes/') === 0 || $file === __FILE__;
+$blocked = strpos($path, '/data/') === 0 || strpos($path, '/includes/') === 0 || $file === __FILE__;
 
 if (!$inside || $blocked || !is_file($file)) {
     require __DIR__ . '/includes/404.php';

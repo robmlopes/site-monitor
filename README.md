@@ -1,83 +1,118 @@
-# Monitor (protótipo)
+# Monitor
 
-- `site/`: site de exemplo em PHP 7.0.33 com várias rotas (produtos, busca, contato POST, checkout, relatório
-  pesado, API JSON, página lenta, erro 500, 404) e a página `/testes.php`, que gera tráfego automático.
-  Usa um banco SQLite (`site/data/`, criado na primeira requisição) e chama os serviços externos simulados.
-- `servicos/`: "outro sistema" simulado (frete, estoque, cotação, pagamento) com latência variável e falhas
-- `site/monitor/`: o que vai para o seu site
-  - `agent.php`: registra cada requisição em `monitor/data/requests.log`: rota, método, status, tempo,
-    CPU (usuário + sistema), memória e as chamadas a outros sistemas
-  - `instrument.php`: mede banco, HTTP, SOAP, Redis etc. (ver abaixo)
-  - `requests.php`: entrega esse log ao painel de forma incremental
-  - `health.php`: saúde do servidor PHP
-- `panel/`: painel em C# (ASP.NET Core / .NET 10): uptime, health, estatísticas por rota (tempo, CPU, memória,
-  tempo esperando outros sistemas), tabela de sistemas externos e feed de acessos com o detalhe de cada chamada
+Rastreia cada requisição de sites PHP (rota, tempo, CPU, memória, servidor) e as chamadas que ela faz a outros
+sistemas (SQL, HTTP, Redis, sessão), em formato **OpenTelemetry**, sem editar o código dos sites.
+Foco inicial: sites Zend Framework 2 + Doctrine em PHP 7.0.33 no IIS.
 
-## Rodar
+| Pasta | O que é |
+|---|---|
+| `agent/` | **o agente PHP** (vai para cada servidor) |
+| `agent/zf2/` | integração Zend Framework 2: rota, erros, Doctrine, cache, `Zend\Http\Client`, shims |
+| `panel/` | painel em C# (.NET 10): uptime, health, servidores, rotas, chamadas filhas, sistemas externos, acessos |
+| `site/`, `servicos/` | site de protótipo e "sistema externo" simulado, para testar sem um site real |
+| `data/` | traces gravados (`data/<site>/traces-AAAAMMDD-HH.jsonl`) — gerado, fora do git |
+
+## Rodar o protótipo
 
 ```powershell
 .\start.ps1
 ```
 
-- Site: http://localhost:8080
-- Serviços externos simulados: http://127.0.0.1:8070
-- Painel: http://localhost:5050
+Site: http://localhost:8080 · Serviços simulados: http://127.0.0.1:8070 · Painel: http://localhost:5050
 
-## Monitorar o seu site
+## Instalar num servidor (sites ZF2)
 
-1. Copie `site/monitor/` para a raiz do seu site e, se quiser, crie `monitor/config.php`:
+1. Copie a pasta `agent/` para o servidor, ex.: `C:\monitor\agent`. Não é preciso instalar nada no IIS.
+   O pool de aplicação precisa poder gravar em `data_dir` (padrão: `C:\monitor\data`).
+2. Opcional: `agent/config.local.php` com o que muda neste servidor (fica fora do git):
    ```php
-   <?php return array(
-       'token'    => 'troque-isto',
-       'db'       => array('dsn' => 'mysql:host=127.0.0.1;dbname=site', 'user' => 'u', 'pass' => 'p'),
-       'writable' => array(__DIR__ . '/../uploads'),
-   );
+   <?php return array('server_name' => 'WEB-01', 'sample_rate' => 0.05, 'token' => 'troque-isto');
    ```
-2. Carregue o agente antes de todo script PHP (Apache):
-   ```apache
-   # .htaccess na raiz do site
-   php_value auto_prepend_file "/caminho/do/site/monitor/agent.php"
+3. Em cada site, três arquivos **iguais para todos os sites ZF2**:
+
+   | Arquivo no site | Conteúdo |
+   |---|---|
+   | `config\monitor-loader.php` | cópia de `agent/loader.php` |
+   | `public\.user.ini` | `auto_prepend_file = "D:\Sites\<site>\config\monitor-loader.php"` |
+   | `config\autoload\monitor.local.php` | cópia de `agent/zf2/site/monitor.local.php` |
+
+   **Nunca aponte o `.user.ini` direto para o agente fora do site**: se o arquivo não existir, o PHP dá erro
+   fatal em todas as páginas. O loader só carrega o agente se ele existir (procura em `MONITOR_HOME`,
+   `monitor.home` do php.ini, na própria pasta e em `C:\monitor\agent`); sem ele o site segue normal.
+   O `monitor.local.php` também não faz nada sem o agente.
+
+4. No painel, um alvo por site (em `panel/appsettings.Local.json`, fora do git; os alvos se mesclam por posição
+   com os do `appsettings.json`, então comece com `{}` para manter o site de protótipo), com um nó por servidor (endereço interno de cada um,
+   não o balanceador — o log é local de cada servidor):
+   ```json
+   { "Id": "loja", "Name": "Loja", "Url": "https://loja.exemplo.com.br/", "Token": "troque-isto",
+     "HealthUrl": "https://loja.exemplo.com.br/_monitor/health.php",
+     "Nodes": [
+       { "Name": "WEB-01", "TracesUrl": "https://10.0.0.11/_monitor/traces.php", "HostHeader": "loja.exemplo.com.br" },
+       { "Name": "WEB-02", "TracesUrl": "https://10.0.0.12/_monitor/traces.php", "HostHeader": "loja.exemplo.com.br" }
+     ] }
    ```
-   A pasta `monitor/data/` precisa ser gravável pelo PHP e já vem com `.htaccess` negando acesso público.
-3. Adicione o alvo em `panel/appsettings.json` (`Monitor:Targets`) com `Url`, `HealthUrl`, `RequestsUrl` e `Token`.
 
-Em dev, `php -S` usa `site/router.php`, que faz o papel do Apache (carrega o agente e responde 404).
-O `start.ps1` desliga o profiler e o autostart do xdebug só nesses servidores (cada um somava ~200 ms por requisição).
+O PHP relê o `.user.ini` a cada 5 minutos (ou recicle o pool do IIS).
 
-## Medir chamadas a outros sistemas
+## O que o agente mede sem editar o site
 
-O PHP não permite interceptar funções sem extensão, então a medição entra trocando uma linha onde a conexão é criada:
+| Item | Como |
+|---|---|
+| Requisição: rota, método, status, tempo, CPU (usuário/sistema), memória, servidor | `auto_prepend_file` + `register_shutdown_function` |
+| Nome da rota (`Controller::action`) e exceções tratadas pelo ZF2 | delegator do serviço `Application` |
+| SQL de **todas** as conexões do Doctrine (descobertas na config) | um `SQLLogger` por conexão (delegator) |
+| Cache Zend\Cache/Redis (`cache` + `caches` da config) e `Common\Redis` | eventos do Zend\Cache / proxy |
+| `Zend\Http\Client` (Socket e Curl; arquivo achado pelo próprio Composer) | subclasse carregada antes do Composer |
+| `curl_exec`, `curl_setopt`, `session_start` | shims de função por namespace (gerados do código do site) |
+| `file_get_contents`/`fopen` em URL | wrapper `http(s)://` (`auto_http`) |
 
-| O site usa | Troque por | O painel mostra |
-|---|---|---|
-| `new PDO(...)` | `new MonitorPDO(...)` | conexão, `query`, `exec` e `execute` de prepared statements, com o SQL |
-| `new mysqli(...)` | `new MonitorMysqli(...)` | conexão e `query` |
-| `curl_exec($ch)` | `monitor_curl_exec($ch)` | status, DNS, conexão, TLS, 1º byte, total e bytes |
-| `new SoapClient(...)` | `new MonitorSoapClient(...)` | cada chamada SOAP (action) |
-| cliente Redis/Memcached/SDK | `Monitor::wrap($cliente, 'redis', 'host:6379')` | cada método chamado |
-| qualquer bloco | `Monitor::span('fila', 'rabbitmq', 'publicar', function () { ... })` | o bloco |
+Fora: SOAP via classe global `SoapClient`, chamadas com barra (`\curl_exec`) e código sem namespace.
+Para esses, há substitutos que exigem editar uma linha: `MonitorPDO`, `MonitorMysqli`, `monitor_curl_exec`,
+`MonitorSoapClient`, `Monitor::wrap(...)`, `Monitor::span(...)` (ver `agent/src/instrument.php`).
 
-`file_get_contents()`/`fopen()` em URLs são medidos sem mudar código se `MONITOR_AUTO_HTTP` estiver ligado
-(`define('MONITOR_AUTO_HTTP', true)` antes do agente, ou `SetEnv MONITOR_AUTO_HTTP 1` no Apache).
-Com ele ligado, a variável `$http_response_header` deixa de ser preenchida no código do site — confira se o site a usa.
+Arquivos gerados por site em `data/<site>/generated/` (apague para regenerar): `shims.php` (refeito a cada
+`shims_ttl_hours`) e a cópia renomeada do `Zend\Http\Client`.
 
-URLs aparecem sem query string e DSNs sem usuário/senha. O SQL aparece como escrito: prefira prepared statements
-para que valores (CPF, e-mail...) não cheguem ao painel.
+## Formato: OpenTelemetry (OTLP/JSON)
 
-## CPU e memória
+Uma linha por requisição, no formato `ExportTraceServiceRequest`:
 
-- **CPU** vem de `getrusage()`: tempo de processador gasto pelo processo durante a requisição (usuário + sistema).
-  No Apache prefork/PHP-FPM é exato por requisição; no Apache do Windows (multi-thread) pode incluir outras threads.
-  No Windows a precisão é de ~15,6 ms, então páginas rápidas aparecem como 0 ou 16 ms.
-- **Memória** mostra o pico realmente usado pelo script (`memory_get_peak_usage(false)`) e o reservado pelo PHP (blocos de 2 MB).
-- **Onde o tempo vai**: CPU, esperando outros sistemas e o resto (I/O local, rede com o navegador, fila do servidor).
+- **resource**: `service.name` (site, pelo Host), `host.name` (servidor: `MONITOR_SERVER_NAME` ou `COMPUTERNAME`).
+  O `X-Servername` do IIS é posto na resposta depois do PHP, então não dá para lê-lo; confira que bate com o nome da máquina.
+- **span SERVER**: `http.route`, `http.request.method`, `url.path`, `http.response.status_code` + `monitor.cpu_ms`,
+  `monitor.memory.peak`, `monitor.ext_ms`, `monitor.ext_calls`, `monitor.detailed`.
+- **spans CLIENT** (filhos): semânticos (`db.system`, `db.statement`, `server.address`, `url.full`,
+  `http.response.status_code`) + `monitor.type`/`monitor.target`/`monitor.op`.
+- **Trace Context (W3C)**: lê `traceparent` na entrada e envia nas chamadas `Zend\Http\Client` e cURL (quando o site
+  define os cabeçalhos com `curl_setopt`). Requisições entre sites monitorados ficam no mesmo trace.
 
-## Simular falhas
+O SQL vai normalizado (valores literais viram `?`), URLs sem query string, DSNs sem usuário/senha; textos ISO-8859-1
+são convertidos para UTF-8.
 
-`/demo/chaos.php?mode=ok|slow|error|down` (ou os botões no painel). Os serviços externos já falham sozinhos:
-pagamento devolve 502 em ~15% das chamadas e o estoque às vezes demora 3 s.
+## Volume e custo
 
-## Limitações do protótipo
+- Arquivos estáticos que chegam ao PHP (404 reescrito para `index.php`) são ignorados.
+- Toda requisição grava o resumo; as chamadas filhas só quando a requisição é lenta (`slow_ms`), deu erro, ou
+  cai na amostra (`sample_rate`). Arquivos por hora, apagados depois de `retention_hours`.
+- Medido no PHP 7.0.33: ~3 ms e ~90 KB por requisição (quase tudo é carregar o agente), ~2 KB de log com detalhe.
 
-- Histórico, incidentes e estatísticas ficam em memória (somem ao reiniciar o painel).
-- Sem autenticação no painel e sem envio de alertas (e-mail/Telegram/etc.).
+## Painel
+
+- Sites à esquerda; um por vez. Servidores do site (clique filtra os acessos).
+- Rotas: clicar abre as chamadas filhas (SQL, HTTP, Redis, sessão) com média, máximo, total e % do tempo da rota.
+- Acessos: clique abre a linha do tempo da requisição; chamadas entre sistemas mostram o trace completo.
+- Tabelas ordenáveis, 10/20/50/100/200 linhas.
+- Endpoints lidos: `/_monitor/health.php` (10 s) e `/_monitor/traces.php` (2 s, incremental por cursor).
+
+## Próximos passos (fora deste teste)
+
+- Coletor OpenTelemetry em cada servidor lendo `data/` e enviando para Loki/Tempo ou outro backend OpenTelemetry
+  (sem custo na requisição e sem o painel precisar alcançar os servidores).
+- Laravel/PHP 8: instrumentação oficial do OpenTelemetry para PHP 8 ou uma camada Laravel.
+- Painel com armazenamento, autenticação e alertas.
+
+## Simular falhas (protótipo)
+
+`/demo/chaos.php?mode=ok|slow|error|down` ou os botões no painel. O pagamento simulado devolve 502 em ~15% das
+chamadas e o estoque às vezes demora 3 s.

@@ -1,11 +1,12 @@
 namespace Monitor.Panel.Monitoring;
 
-/// <summary>Uma requisição registrada pelo monitor/agent.php no site.</summary>
+/// <summary>Uma requisição (span SERVER do trace OpenTelemetry gravado pelo agente).</summary>
 public sealed record RequestRecord(
     string Id,
     DateTimeOffset Ts,
     string Method,
     string Route,
+    string? Path,
     string? Query,
     int Status,
     double Ms,
@@ -15,12 +16,17 @@ public sealed record RequestRecord(
     long Mem,
     long MemPeak,
     double ExtMs,
+    int ExtCalls,
+    bool Detailed,
     List<Span>? Spans,
     int SpansDropped,
     string? Ip,
     string? Ua,
     string? Referer,
-    string? Error);
+    string? Error,
+    string Server,
+    string TraceId,
+    string? ParentSpanId);
 
 /// <summary>Uma chamada a outro sistema (banco, HTTP, SOAP, Redis...) feita durante a requisição.</summary>
 public sealed record Span(
@@ -31,7 +37,8 @@ public sealed record Span(
     double Ms,
     bool Ok,
     string? Error,
-    SpanDetail? Detail);
+    SpanDetail? Detail,
+    string? Id = null);
 
 /// <summary>Tempos detalhados de chamadas HTTP (ms).</summary>
 public sealed record SpanDetail(int? Status, double? Dns, double? Connect, double? Tls, double? Ttfb, double? Total, long? Bytes);
@@ -56,7 +63,32 @@ public sealed record RouteStats(
     int LastStatus,
     string? LastError);
 
+public sealed record ServerStats(
+    string Server,
+    int Hits,
+    int ServerErrors,
+    double AvgMs,
+    double P95Ms,
+    double AvgCpuMs,
+    double AvgMemPeak,
+    DateTimeOffset LastSeen);
+
 public sealed record OperationStats(string Op, int Calls, int Errors, double AvgMs, double MaxMs);
+
+/// <summary>Uma chamada filha (SQL, HTTP, Redis, sessão...) agregada dentro de uma rota.</summary>
+public sealed record RouteChildStats(
+    string Type,
+    string Target,
+    string Op,
+    int Calls,
+    int Requests,
+    double PerRequest,
+    int Errors,
+    double AvgMs,
+    double MaxMs,
+    double TotalMs,
+    double ShareOfRoute,
+    string? LastError);
 
 public sealed record DependencyStats(
     string Type,
@@ -78,21 +110,23 @@ public sealed class RequestStore
     private const int RecentSize = 2000;
     private const int SamplesPerRoute = 300;
     private const int MaxOpsPerDependency = 200;
+    private const int MaxChildrenPerRoute = 300;
 
     private readonly Dictionary<string, TargetRequests> _targets = [];
     private readonly Lock _sync = new();
 
-    public long Offset(string targetId)
+    /// <summary>Cursor de leitura do endpoint traces de um servidor (nó) do site.</summary>
+    public string? Cursor(string targetId, string node)
     {
-        lock (_sync) return _targets.TryGetValue(targetId, out var t) ? t.Offset : 0;
+        lock (_sync) return _targets.TryGetValue(targetId, out var t) && t.Cursors.TryGetValue(node, out var c) ? c : null;
     }
 
-    public void Add(string targetId, long nextOffset, IEnumerable<RequestRecord> records)
+    public void Add(string targetId, string node, string? cursor, IEnumerable<RequestRecord> records)
     {
         lock (_sync)
         {
             if (!_targets.TryGetValue(targetId, out var t)) _targets[targetId] = t = new TargetRequests();
-            t.Offset = nextOffset;
+            t.Cursors[node] = cursor;
 
             foreach (var r in records)
             {
@@ -109,9 +143,33 @@ public sealed class RequestStore
                 agg.CpuMs.Add(r.CpuMs);
                 agg.MemPeak.Add(r.MemPeak);
                 agg.ExtMs.Add(r.ExtMs);
-                agg.ExtCalls += r.Spans?.Count ?? 0;
+                agg.ExtCalls += r.ExtCalls;
+
+                if (!t.Servers.TryGetValue(r.Server, out var srv)) t.Servers[r.Server] = srv = new ServerAgg();
+                srv.Ms.Add(r.Ms);
+                srv.CpuMs.Add(r.CpuMs);
+                srv.MemPeak.Add(r.MemPeak);
+                if (r.Status >= 500) srv.ServerErrors++;
+                srv.LastSeen = r.Ts;
                 agg.Last = r;
                 if (r.Error is not null) agg.LastError = r.Error;
+
+                // Chamadas filhas desta rota, agrupadas por tipo + destino + operação.
+                var seenInRequest = new HashSet<(string, string, string)>();
+                foreach (var s in r.Spans ?? [])
+                {
+                    var ck = (s.Type, s.Target, s.Op);
+                    if (!agg.Children.TryGetValue(ck, out var child))
+                    {
+                        if (agg.Children.Count >= MaxChildrenPerRoute) continue;
+                        agg.Children[ck] = child = new OpAgg();
+                    }
+                    child.Calls++;
+                    child.TotalMs += s.Ms;
+                    child.MaxMs = Math.Max(child.MaxMs, s.Ms);
+                    if (!s.Ok) { child.Errors++; child.LastError = s.Error; }
+                    if (seenInRequest.Add(ck)) child.Requests++;
+                }
 
                 foreach (var s in r.Spans ?? [])
                 {
@@ -157,6 +215,23 @@ public sealed class RequestStore
         }
     }
 
+    public IReadOnlyList<RouteChildStats> RouteChildren(string targetId, string method, string route)
+    {
+        lock (_sync)
+        {
+            if (!_targets.TryGetValue(targetId, out var t) || !t.Routes.TryGetValue((method, route), out var a)) return [];
+            var routeTotal = a.Ms.Avg * a.Hits;
+            return a.Children
+                .Select(kv => new RouteChildStats(
+                    kv.Key.Type, kv.Key.Target, kv.Key.Op, kv.Value.Calls, kv.Value.Requests,
+                    (double)kv.Value.Calls / a.Hits, kv.Value.Errors,
+                    kv.Value.TotalMs / kv.Value.Calls, kv.Value.MaxMs, kv.Value.TotalMs,
+                    routeTotal > 0 ? kv.Value.TotalMs / routeTotal : 0, kv.Value.LastError))
+                .OrderByDescending(c => c.TotalMs)
+                .ToList();
+        }
+    }
+
     public IReadOnlyList<DependencyStats> Dependencies(string targetId)
     {
         lock (_sync)
@@ -180,13 +255,27 @@ public sealed class RequestStore
         }
     }
 
-    public IReadOnlyList<RequestRecord> Recent(string targetId, string? method, string? route, int limit)
+    public IReadOnlyList<ServerStats> Servers(string targetId)
+    {
+        lock (_sync)
+        {
+            if (!_targets.TryGetValue(targetId, out var t)) return [];
+            return t.Servers
+                .Select(kv => new ServerStats(kv.Key, kv.Value.Ms.Count, kv.Value.ServerErrors, kv.Value.Ms.Avg, kv.Value.Ms.P95(),
+                    kv.Value.CpuMs.Avg, kv.Value.MemPeak.Avg, kv.Value.LastSeen))
+                .OrderBy(s => s.Server)
+                .ToList();
+        }
+    }
+
+    public IReadOnlyList<RequestRecord> Recent(string targetId, string? method, string? route, string? server, string? trace, int limit)
     {
         lock (_sync)
         {
             if (!_targets.TryGetValue(targetId, out var t)) return [];
             return t.Recent.Reverse()
-                .Where(r => (method is null || r.Method == method) && (route is null || r.Route == route))
+                .Where(r => (method is null || r.Method == method) && (route is null || r.Route == route)
+                    && (server is null || r.Server == server) && (trace is null || r.TraceId == trace))
                 .Take(limit)
                 .ToList();
         }
@@ -194,7 +283,8 @@ public sealed class RequestStore
 
     private sealed class TargetRequests
     {
-        public long Offset { get; set; }
+        public Dictionary<string, string?> Cursors { get; } = [];
+        public Dictionary<string, ServerAgg> Servers { get; } = [];
         public Queue<RequestRecord> Recent { get; } = new();
         public Dictionary<(string Method, string Route), RouteAgg> Routes { get; } = [];
         public Dictionary<(string Type, string Target), DependencyAgg> Dependencies { get; } = [];
@@ -209,6 +299,16 @@ public sealed class RequestStore
         public Metric ExtMs { get; } = new();
         public RequestRecord? Last;
         public string? LastError;
+        public Dictionary<(string Type, string Target, string Op), OpAgg> Children { get; } = [];
+    }
+
+    private sealed class ServerAgg
+    {
+        public int ServerErrors;
+        public DateTimeOffset LastSeen;
+        public Metric Ms { get; } = new();
+        public Metric CpuMs { get; } = new();
+        public Metric MemPeak { get; } = new();
     }
 
     private sealed class DependencyAgg
@@ -224,8 +324,9 @@ public sealed class RequestStore
 
     private sealed class OpAgg
     {
-        public int Calls, Errors;
+        public int Calls, Errors, Requests;
         public double TotalMs, MaxMs;
+        public string? LastError;
     }
 
     /// <summary>Média e máximo de tudo, p95 sobre as últimas amostras.</summary>

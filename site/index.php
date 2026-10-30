@@ -1,5 +1,5 @@
 <?php
-// Site de exemplo (substitua pelo seu). Cada página passa pelo monitor/agent.php.
+// Site de exemplo (substitua pelo seu). Cada página passa pelo agente (agent/).
 require __DIR__ . '/includes/layout.php';
 page_start('Site de exemplo');
 ?>

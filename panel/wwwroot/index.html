@@ -8,19 +8,34 @@
   :root {
     --bg: #0f1216; --panel: #171b21; --line: #262c35; --text: #e6e9ee; --muted: #8b94a3;
     --up: #2fb67c; --degraded: #e0a526; --down: #e5484d; --unknown: #5b6472; --accent: #5b8def;
+    --cpu: #a78bfa; --ext: #38bdf8;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-bottom: 1px solid var(--line); }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--line); }
   header h1 { font-size: 16px; margin: 0; font-weight: 600; }
   header .spacer { flex: 1; }
   header small { color: var(--muted); }
-  main { padding: 24px; max-width: 1200px; margin: 0 auto; display: grid; gap: 20px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  .layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 20px; padding: 20px 24px; max-width: 1600px; margin: 0 auto; align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; padding: 16px; } }
+  main { display: grid; gap: 20px; min-width: 0; }
+
+  /* Lista de sites */
+  .sites { position: sticky; top: 16px; display: grid; gap: 8px; }
+  .sites h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 4px; }
+  .site { display: block; width: 100%; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; color: var(--text); cursor: pointer; font: inherit; }
+  .site:hover { border-color: #3a4250; }
+  .site.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+  .site .name { font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .site .host { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 2px 0 8px; }
+  .site .mini { display: flex; gap: 12px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .site .mini b { color: var(--text); font-weight: 600; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; min-width: 0; }
   .card h2 { margin: 0; font-size: 15px; }
   .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .muted { color: var(--muted); }
-  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 99px; font-size: 12px; font-weight: 600; white-space: nowrap; }
   .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
   .Up { color: var(--up); background: color-mix(in srgb, var(--up) 15%, transparent); }
   .Degraded { color: var(--degraded); background: color-mix(in srgb, var(--degraded) 15%, transparent); }
@@ -34,28 +49,36 @@
   .strip i { flex: 1; border-radius: 2px; min-width: 2px; }
   svg.chart { width: 100%; height: 120px; display: block; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } main { padding: 16px; } }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
   table { width: 100%; border-collapse: collapse; }
   td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
-  th { color: var(--muted); font-weight: 500; }
-  button { background: var(--line); color: var(--text); border: 1px solid #343b46; border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; }
-  button:hover { border-color: var(--accent); }
+  th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--text); }
+  th.sorted { color: var(--text); }
+  th .arrow { font-size: 10px; margin-left: 4px; opacity: .8; }
+  button, select { background: var(--line); color: var(--text); border: 1px solid #343b46; border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; }
+  select { padding: 3px 6px; font-size: 12px; }
+  button:hover, select:hover { border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: default; border-color: #343b46; }
   h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
   .ok { color: var(--up); } .fail { color: var(--down); }
   a { color: var(--accent); }
-  .section { margin-top: 22px; }
   .table-wrap { overflow-x: auto; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  tr.route { cursor: pointer; }
-  tr.route:hover td { background: #1d222a; }
-  tr.route.selected td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  tr.click { cursor: pointer; }
+  tr.click:hover td { background: #1d222a; }
+  tr.selected td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .pager { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .pager button { padding: 2px 10px; font-size: 12px; }
   .code { display: inline-block; min-width: 38px; text-align: center; border-radius: 4px; padding: 0 6px; font-weight: 600; font-size: 12px; }
   .c2 { color: var(--up); background: color-mix(in srgb, var(--up) 15%, transparent); }
   .c3 { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
   .c4 { color: var(--degraded); background: color-mix(in srgb, var(--degraded) 15%, transparent); }
   .c5 { color: var(--down); background: color-mix(in srgb, var(--down) 15%, transparent); }
+  .c0 { color: var(--down); background: color-mix(in srgb, var(--down) 15%, transparent); }
   .method { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); }
-  .dist { display: flex; height: 6px; width: 80px; border-radius: 3px; overflow: hidden; background: var(--line); margin-left: auto; }
+  .dist { display: flex; height: 6px; width: 80px; border-radius: 3px; overflow: hidden; background: var(--line); }
   .slow { color: var(--degraded); }
   .feed td { font-size: 12.5px; padding: 4px 8px; }
   .feed tr.new td { animation: flash 1.2s ease-out; }
@@ -63,12 +86,13 @@
   .chip { display: inline-flex; gap: 6px; align-items: center; padding: 2px 4px 2px 10px; border-radius: 99px; background: var(--line); font-size: 12px; }
   .chip button { padding: 0 6px; border: 0; background: transparent; }
   .err-msg { color: var(--down); font-size: 12px; }
-  :root { --cpu: #a78bfa; --ext: #38bdf8; }
+  .route-name { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+  .op-cell { display: inline-block; max-width: 520px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
   .tbar { display: flex; width: 110px; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: middle; }
   .legend { font-size: 12px; margin-top: 6px; }
   .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; background: var(--line); }
-  .t-db { color: #fbbf24; } .t-http { color: var(--ext); } .t-soap { color: #f472b6; } .t-redis { color: #f87171; }
+  .t-db { color: #fbbf24; } .t-http { color: var(--ext); } .t-soap { color: #f472b6; } .t-redis { color: #f87171; } .t-session { color: #34d399; }
   .ops { font-size: 12px; margin-top: 4px; font-family: ui-monospace, Consolas, monospace; }
   .ops div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 560px; }
   tr.detail td { background: #12151a; padding: 12px 14px; }
@@ -86,35 +110,98 @@
   <span class="spacer"></span>
   <small id="updated"></small>
 </header>
-<main>
-  <div id="targets"></div>
-
-  <section class="card">
-    <h2>Incidentes</h2>
-    <table id="incidents"><thead><tr><th>Status</th><th>Alvo</th><th>Motivo</th><th>Início</th><th>Duração</th></tr></thead><tbody></tbody></table>
-  </section>
-
-  <section class="card">
-    <h2>Simulação (protótipo)</h2>
-    <p class="muted">Muda o comportamento do site de exemplo via <code>/demo/chaos.php</code>.</p>
-    <div class="row" id="chaos">
-      <button data-mode="ok">Normal</button>
-      <button data-mode="slow">Lento</button>
-      <button data-mode="error">Erro 500</button>
-      <button data-mode="down">Fora do ar (timeout)</button>
-    </div>
-  </section>
-</main>
+<div class="layout">
+  <aside class="sites"><h2>Sites rastreados</h2><div id="sites"></div></aside>
+  <main id="main"><p class="muted">Carregando…</p></main>
+</div>
 
 <script>
-const SITE = 'http://localhost:8080';
+const SITE_DEMO = 'http://localhost:8080';
+const PAGE_SIZES = [10, 20, 50, 100, 200];
 const colors = { Up: 'var(--up)', Degraded: 'var(--degraded)', Down: 'var(--down)', Unknown: 'var(--unknown)' };
 const label = { Up: 'Online', Degraded: 'Degradado', Down: 'Fora do ar', Unknown: 'Aguardando' };
+const typeLabel = { db: 'Banco', http: 'HTTP', soap: 'SOAP', redis: 'Redis', session: 'Sessão' };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtMs = v => v == null ? '–' : `${Math.round(v)} ms`;
 const fmtBytes = v => v == null ? '–' : v > 1e9 ? `${(v / 1e9).toFixed(1)} GB` : `${(v / 1e6).toFixed(1)} MB`;
+const fmtMem = v => v == null ? '–' : v >= 1048576 ? `${(v / 1048576).toFixed(1)} MB` : `${Math.round(v / 1024)} KB`;
 const fmtTime = t => t ? new Date(t).toLocaleTimeString('pt-BR') : '–';
 const fmtDur = (a, b) => { const s = Math.round(((b ? new Date(b) : new Date()) - new Date(a)) / 1000); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; };
+const codeClass = s => `code c${String(s)[0]}`;
+const json = url => fetch(url).then(r => r.json());
+const hostOf = url => { try { return new URL(url).host; } catch { return url; } };
+
+// Preferências por navegador (site escolhido, ordenação e linhas por tabela).
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('monitor:' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('monitor:' + k, JSON.stringify(v)); } catch { /* sem storage: só não lembra */ } },
+};
+
+let targets = [];
+let selected = decodeURIComponent(location.hash.slice(1)) || store.get('site', null);
+let filter = null;            // { method, route } — filtra o feed de acessos
+let serverFilter = null;      // nome do servidor — filtra o feed de acessos
+let traceFilter = null;       // traceId — mostra todas as requisições de um trace (ex.: chamada entre sistemas)
+let openRoute = null;         // { method, route } — rota aberta mostrando as chamadas filhas
+let routeChildren = [];
+const expanded = new Set();   // acessos abertos no feed
+const seen = new Set();       // ids já mostrados (para destacar os novos)
+const views = {};             // estado das tabelas: { key, dir, size, page }
+
+// ---------- Tabela com ordenação e paginação ----------
+
+function view(id, defKey, defDir) {
+  if (!views[id]) views[id] = Object.assign({ key: defKey, dir: defDir, size: 20, page: 0 }, store.get('table:' + id, {}));
+  return views[id];
+}
+function saveView(id) { const v = views[id]; store.set('table:' + id, { key: v.key, dir: v.dir, size: v.size }); }
+function sortBy(id, key) {
+  const v = views[id];
+  if (v.key === key) v.dir = v.dir === 'asc' ? 'desc' : 'asc';
+  else { v.key = key; v.dir = views[id].numeric?.[key] ? 'desc' : 'asc'; }
+  v.page = 0; saveView(id); refresh();
+}
+function setSize(id, size) { views[id].size = +size; views[id].page = 0; saveView(id); refresh(); }
+function setPage(id, delta) { views[id].page += delta; refresh(); }
+
+/**
+ * cols: [{ key, label, num?, sort?: row => valor, html: row => html }]
+ * opts: { def: [chave, 'asc'|'desc'], rowAttrs?: row => attrs, after?: row => html, cls?: 'feed', empty }
+ */
+function dataTable(id, rows, cols, opts) {
+  const v = view(id, opts.def[0], opts.def[1]);
+  v.numeric = Object.fromEntries(cols.filter(c => c.num).map(c => [c.key, true]));
+  if (!rows.length) return `<p class="muted">${opts.empty}</p>`;
+
+  const col = cols.find(c => c.key === v.key) || cols.find(c => c.key === opts.def[0]);
+  const val = col.sort || (r => r[col.key]);
+  const sorted = rows.slice().sort((a, b) => {
+    const x = val(a), y = val(b);
+    const r = x == null ? 1 : y == null ? -1 : typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'pt-BR', { numeric: true });
+    return v.dir === 'asc' ? r : -r;
+  });
+  const pages = Math.max(1, Math.ceil(sorted.length / v.size));
+  v.page = Math.min(Math.max(0, v.page), pages - 1);
+  const start = v.page * v.size;
+  const pageRows = sorted.slice(start, start + v.size);
+
+  const head = cols.map(c => {
+    if (c.sortable === false) return `<th class="${c.num ? 'num' : ''}">${c.label}</th>`;
+    const on = c.key === col.key;
+    return `<th class="sortable ${c.num ? 'num' : ''} ${on ? 'sorted' : ''}" onclick="sortBy('${id}','${c.key}')" title="Ordenar por ${esc(c.label.replace(/<[^>]+>/g, ''))}">${c.label}<span class="arrow">${on ? (v.dir === 'asc' ? '▲' : '▼') : ''}</span></th>`;
+  }).join('');
+  const body = pageRows.map(r => `<tr ${opts.rowAttrs ? opts.rowAttrs(r) : ''}>${cols.map(c => `<td class="${c.num ? 'num' : ''} ${c.cls ? c.cls(r) : ''}">${c.html(r)}</td>`).join('')}</tr>${opts.after ? opts.after(r, cols.length) : ''}`).join('');
+
+  const pager = `<div class="pager">
+    <label>Linhas <select onchange="setSize('${id}', this.value)">${PAGE_SIZES.map(n => `<option ${n === v.size ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    <span>${start + 1}–${start + pageRows.length} de ${sorted.length}</span>
+    <button onclick="setPage('${id}',-1)" ${v.page === 0 ? 'disabled' : ''} aria-label="Página anterior">‹</button>
+    <button onclick="setPage('${id}',1)" ${v.page >= pages - 1 ? 'disabled' : ''} aria-label="Próxima página">›</button>
+  </div>`;
+  return `<div class="table-wrap"><table class="${opts.cls || ''}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${pager}`;
+}
+
+// ---------- Blocos ----------
 
 function pointStatus(r, slowMs) {
   if (!r.reachable || r.statusCode == null || r.statusCode >= 500) return 'Down';
@@ -144,22 +231,13 @@ function healthBlock(h) {
   return `<table>
     <tr><th>PHP</th><td>${esc(h.php?.version)} (${esc(h.php?.sapi)}, ${esc(h.php?.os)})</td></tr>
     <tr><th>memory_limit</th><td>${esc(h.php?.memory_limit)} · uso ${fmtBytes(h.memory?.usage)}</td></tr>
+    <tr><th>default_charset</th><td>${esc(h.php?.charset || '–')}</td></tr>
     <tr><th>Disco</th><td>${disk}</td></tr>
     <tr><th>OPcache</th><td>${op}</td></tr>
+    ${h.agent ? `<tr><th>Agente</th><td>v${esc(h.agent.version)} · servidor ${esc(h.agent.server)} · amostra ${Math.round(h.agent.sample_rate * 100)}% · lenta ≥ ${h.agent.slow_ms} ms${h.php?.xdebug ? ' · <span class="slow">xdebug carregado</span>' : ''}</td></tr>` : ''}
     ${(h.checks || []).map(c => `<tr><th>${esc(c.name)}</th><td class="${c.status === 'ok' ? 'ok' : 'fail'}">${esc(c.status)} · ${esc(c.message)} <span class="muted">(${c.ms} ms)</span></td></tr>`).join('')}
   </table>`;
 }
-
-// Filtro do feed de acessos: clique numa rota da tabela.
-let filter = null; // { target, method, route }
-const seen = new Set();
-const json = url => fetch(url).then(r => r.json());
-const codeClass = s => `code c${String(s)[0]}`;
-const siteBase = t => t.url.replace(/\/$/, '');
-
-const fmtMem = v => v == null ? '–' : v >= 1048576 ? `${(v / 1048576).toFixed(1)} MB` : `${Math.round(v / 1024)} KB`;
-const typeLabel = { db: 'Banco', http: 'HTTP', soap: 'SOAP', redis: 'Redis' };
-const expanded = new Set();
 
 // Barra que divide o tempo da requisição em CPU, espera por sistemas externos e o resto (I/O local, fila...).
 function timeBar(total, cpu, ext) {
@@ -169,55 +247,78 @@ function timeBar(total, cpu, ext) {
     <i style="width:${c}%;background:var(--cpu)"></i><i style="width:${e}%;background:var(--ext)"></i></span>`;
 }
 
-function routesBlock(t, routes) {
-  if (!routes.length) return '<p class="muted">Nenhum acesso registrado ainda. Navegue no site para gerar tráfego.</p>';
-  const rows = routes.map(r => {
-    const sel = filter && filter.target === t.id && filter.method === r.method && filter.route === r.route;
-    const pct = n => (100 * n / r.hits).toFixed(1);
-    return `<tr class="route ${sel ? 'selected' : ''}" data-route="${esc(r.route)}" onclick="selectRoute('${t.id}','${r.method}',this.dataset.route)">
-      <td class="method">${r.method}</td>
-      <td><a href="${esc(siteBase(t) + r.route)}" target="_blank" onclick="event.stopPropagation()">${esc(r.route)}</a>
-          ${r.lastError ? `<div class="err-msg" title="${esc(r.lastError)}">${esc(r.lastError.slice(0, 80))}</div>` : ''}</td>
-      <td class="num"><div class="row" style="justify-content:flex-end;gap:8px">${r.hits}
-        <span class="dist"><i style="width:${pct(r.ok)}%;background:var(--up)"></i><i style="width:${pct(r.clientErrors)}%;background:var(--degraded)"></i><i style="width:${pct(r.serverErrors)}%;background:var(--down)"></i></span></div></td>
-      <td class="num ${r.clientErrors ? 'slow' : 'muted'}">${r.clientErrors}</td>
-      <td class="num ${r.serverErrors ? 'fail' : 'muted'}">${r.serverErrors}</td>
-      <td class="num">${fmtMs(r.avgMs)}</td>
-      <td class="num ${r.p95Ms > 1000 ? 'slow' : ''}">${fmtMs(r.p95Ms)}</td>
-      <td class="num">${fmtMs(r.avgCpuMs)} <span class="muted">/ ${fmtMs(r.maxCpuMs)}</span></td>
-      <td class="num">${fmtMem(r.avgMemPeak)} <span class="muted">/ ${fmtMem(r.maxMemPeak)}</span></td>
-      <td class="num">${fmtMs(r.avgExtMs)} <span class="muted">· ${r.avgExtCalls.toFixed(1)}×</span></td>
-      <td>${timeBar(r.avgMs, r.avgCpuMs, r.avgExtMs)}</td>
-      <td class="num"><span class="${codeClass(r.lastStatus)}">${r.lastStatus}</span> <span class="muted">${fmtTime(r.lastSeen)}</span></td>
-    </tr>`;
-  }).join('');
-  return `<div class="table-wrap"><table>
-    <thead><tr><th></th><th>Rota</th><th class="num">Acessos</th><th class="num">4xx</th><th class="num">5xx</th>
-      <th class="num">Tempo médio</th><th class="num">p95</th><th class="num">CPU méd / máx</th><th class="num">Memória méd / máx</th>
-      <th class="num">Externo médio</th><th>Onde o tempo vai</th><th class="num">Último</th></tr></thead>
-    <tbody>${rows}</tbody></table></div>`;
+const siteBase = t => t.url.replace(/\/$/, '');
+
+const isOpen = r => openRoute && openRoute.method === r.method && openRoute.route === r.route;
+
+function childrenBlock(r) {
+  const head = `<div class="row muted" style="font-size:12px;gap:16px;margin-bottom:8px">
+    <span><b style="color:var(--text)">${r.hits}</b> requisição(ões)</span>
+    <span>tempo médio <b style="color:var(--text)">${fmtMs(r.avgMs)}</b></span>
+    <span><i class="dot" style="background:var(--ext)"></i>chamadas filhas <b style="color:var(--text)">${fmtMs(r.avgExtMs)}</b> por requisição (${r.avgExtCalls.toFixed(1)}×)</span>
+    <span><i class="dot" style="background:var(--cpu)"></i>CPU <b style="color:var(--text)">${fmtMs(r.avgCpuMs)}</b></span>
+    <span style="flex:1"></span>
+    <button onclick="event.stopPropagation(); showRouteRequests('${r.method}', this.closest('tr').previousElementSibling.dataset.route)">Ver acessos desta rota</button>
+  </div>`;
+  return head + dataTable('children', routeChildren, [
+    { key: 'type', label: 'Tipo', html: c => `<span class="badge t-${esc(c.type)}">${esc(typeLabel[c.type] || c.type)}</span>` },
+    { key: 'target', label: 'Destino', html: c => `<span class="muted">${esc(c.target)}</span>` },
+    { key: 'op', label: 'Operação', html: c => `<span class="route-name op-cell" title="${esc(c.op)}">${esc(c.op)}</span>`
+        + (c.lastError ? `<div class="err-msg">${esc(c.lastError)}</div>` : '') },
+    { key: 'calls', label: 'Chamadas', num: true, html: c => c.calls },
+    { key: 'perRequest', label: 'Por requisição', num: true, html: c => c.perRequest.toFixed(1) + '×' },
+    { key: 'avgMs', label: 'Média', num: true, cls: c => c.avgMs > 1000 ? 'slow' : '', html: c => fmtMs(c.avgMs) },
+    { key: 'maxMs', label: 'Máx', num: true, html: c => fmtMs(c.maxMs) },
+    { key: 'totalMs', label: 'Tempo total', num: true, html: c => fmtMs(c.totalMs) },
+    { key: 'shareOfRoute', label: '% do tempo da rota', num: true, html: c => `<div class="row" style="justify-content:flex-end;gap:6px">${(100 * c.shareOfRoute).toFixed(0)}%
+        <span class="tbar" style="width:70px"><i style="width:${Math.min(100, 100 * c.shareOfRoute)}%;background:var(--ext)"></i></span></div>` },
+    { key: 'errors', label: 'Erros', num: true, cls: c => c.errors ? 'fail' : 'muted', html: c => c.errors },
+  ], { def: ['totalMs', 'desc'], empty: 'Nenhuma chamada a outros sistemas nesta rota (só processamento local).' });
 }
 
-function depsBlock(deps) {
-  if (!deps.length) return '<p class="muted">Nenhuma chamada a outros sistemas registrada.</p>';
-  const rows = deps.map(d => `<tr>
-      <td><span class="badge t-${esc(d.type)}">${esc(typeLabel[d.type] || d.type)}</span></td>
-      <td><b>${esc(d.target)}</b>
+function routesTable(t, routes) {
+  const pct = (r, n) => (100 * n / r.hits).toFixed(1);
+  return dataTable('routes', routes, [
+    { key: 'method', label: 'Método', html: r => `<span class="muted">${isOpen(r) ? '▾' : '▸'}</span> <span class="method">${r.method}</span>` },
+    { key: 'route', label: 'Rota', html: r => (r.route.startsWith('/')
+        ? `<a href="${esc(siteBase(t) + r.route)}" target="_blank" onclick="event.stopPropagation()">${esc(r.route)}</a>`
+        : `<span class="route-name">${esc(r.route)}</span>`)
+        + (r.lastError ? `<div class="err-msg" title="${esc(r.lastError)}">${esc(r.lastError.slice(0, 80))}</div>` : '') },
+    { key: 'hits', label: 'Acessos', num: true, html: r => `<div class="row" style="justify-content:flex-end;gap:8px">${r.hits}
+        <span class="dist"><i style="width:${pct(r, r.ok)}%;background:var(--up)"></i><i style="width:${pct(r, r.clientErrors)}%;background:var(--degraded)"></i><i style="width:${pct(r, r.serverErrors)}%;background:var(--down)"></i></span></div>` },
+    { key: 'clientErrors', label: '4xx', num: true, cls: r => r.clientErrors ? 'slow' : 'muted', html: r => r.clientErrors },
+    { key: 'serverErrors', label: '5xx', num: true, cls: r => r.serverErrors ? 'fail' : 'muted', html: r => r.serverErrors },
+    { key: 'avgMs', label: 'Tempo médio', num: true, html: r => fmtMs(r.avgMs) },
+    { key: 'p95Ms', label: 'p95', num: true, cls: r => r.p95Ms > 1000 ? 'slow' : '', html: r => fmtMs(r.p95Ms) },
+    { key: 'avgCpuMs', label: 'CPU méd / máx', num: true, html: r => `${fmtMs(r.avgCpuMs)} <span class="muted">/ ${fmtMs(r.maxCpuMs)}</span>` },
+    { key: 'avgMemPeak', label: 'Memória méd / máx', num: true, html: r => `${fmtMem(r.avgMemPeak)} <span class="muted">/ ${fmtMem(r.maxMemPeak)}</span>` },
+    { key: 'avgExtMs', label: 'Externo médio', num: true, html: r => `${fmtMs(r.avgExtMs)} <span class="muted">· ${r.avgExtCalls.toFixed(1)}×</span>` },
+    { key: 'extShare', label: 'Onde o tempo vai', num: true, sort: r => r.avgMs ? r.avgExtMs / r.avgMs : 0, html: r => timeBar(r.avgMs, r.avgCpuMs, r.avgExtMs) },
+    { key: 'lastSeen', label: 'Último', num: true, html: r => `<span class="${codeClass(r.lastStatus)}">${r.lastStatus}</span> <span class="muted">${fmtTime(r.lastSeen)}</span>` },
+  ], {
+    def: ['hits', 'desc'],
+    empty: 'Nenhum acesso registrado ainda. Navegue no site para gerar tráfego.',
+    rowAttrs: r => `class="click ${isOpen(r) ? 'selected' : ''}" data-route="${esc(r.route)}" onclick="toggleRoute('${r.method}', this.dataset.route)"`,
+    after: (r, n) => isOpen(r) ? `<tr class="detail"><td colspan="${n}">${childrenBlock(r)}</td></tr>` : '',
+  });
+}
+
+function depsTable(deps) {
+  return dataTable('deps', deps, [
+    { key: 'type', label: 'Tipo', html: d => `<span class="badge t-${esc(d.type)}">${esc(typeLabel[d.type] || d.type)}</span>` },
+    { key: 'target', label: 'Destino · operações que mais somam tempo', html: d => `<b>${esc(d.target)}</b>
         <div class="ops">${d.slowestOps.map(o => `<div title="${esc(o.op)}"><span class="muted">${o.calls}× · méd ${fmtMs(o.avgMs)} · máx ${fmtMs(o.maxMs)}${o.errors ? ` · <span class="fail">${o.errors} erro(s)</span>` : ''}</span> ${esc(o.op)}</div>`).join('')}</div>
-        ${d.lastError ? `<div class="err-msg">último erro: ${esc(d.lastError)}</div>` : ''}</td>
-      <td class="num">${d.calls}</td>
-      <td class="num ${d.errors ? 'fail' : 'muted'}">${d.errors}${d.errors ? ` <span class="muted">(${(100 * d.errors / d.calls).toFixed(0)}%)</span>` : ''}</td>
-      <td class="num">${fmtMs(d.avgMs)}</td>
-      <td class="num ${d.p95Ms > 1000 ? 'slow' : ''}">${fmtMs(d.p95Ms)}</td>
-      <td class="num">${fmtMs(d.maxMs)}</td>
-      <td class="num">${d.avgTtfbMs == null ? '<span class="muted">–</span>' : fmtMs(d.avgTtfbMs)}</td>
-      <td class="muted" style="font-size:12px">${d.routes.map(esc).join('<br>')}</td>
-      <td class="num muted">${fmtTime(d.lastSeen)}</td>
-    </tr>`).join('');
-  return `<div class="table-wrap"><table>
-    <thead><tr><th></th><th>Sistema · operações que mais somam tempo</th><th class="num">Chamadas</th><th class="num">Erros</th>
-      <th class="num">Média</th><th class="num">p95</th><th class="num">Máx</th><th class="num">1º byte</th><th>Usado por</th><th class="num">Última</th></tr></thead>
-    <tbody>${rows}</tbody></table></div>`;
+        ${d.lastError ? `<div class="err-msg">último erro: ${esc(d.lastError)}</div>` : ''}` },
+    { key: 'calls', label: 'Chamadas', num: true, html: d => d.calls },
+    { key: 'errors', label: 'Erros', num: true, cls: d => d.errors ? 'fail' : 'muted', html: d => d.errors + (d.errors ? ` <span class="muted">(${(100 * d.errors / d.calls).toFixed(0)}%)</span>` : '') },
+    { key: 'avgMs', label: 'Média', num: true, html: d => fmtMs(d.avgMs) },
+    { key: 'p95Ms', label: 'p95', num: true, cls: d => d.p95Ms > 1000 ? 'slow' : '', html: d => fmtMs(d.p95Ms) },
+    { key: 'maxMs', label: 'Máx', num: true, html: d => fmtMs(d.maxMs) },
+    { key: 'totalMs', label: 'Tempo total', num: true, sort: d => d.avgMs * d.calls, html: d => fmtMs(d.avgMs * d.calls) },
+    { key: 'avgTtfbMs', label: '1º byte', num: true, html: d => d.avgTtfbMs == null ? '<span class="muted">–</span>' : fmtMs(d.avgTtfbMs) },
+    { key: 'routes', label: 'Usado por', sort: d => d.routes.join(' '), html: d => `<span class="muted" style="font-size:12px">${d.routes.map(esc).join('<br>')}</span>` },
+    { key: 'lastSeen', label: 'Última', num: true, html: d => `<span class="muted">${fmtTime(d.lastSeen)}</span>` },
+  ], { def: ['totalMs', 'desc'], empty: 'Nenhuma chamada a outros sistemas registrada.' });
 }
 
 function waterfall(r) {
@@ -230,7 +331,13 @@ function waterfall(r) {
     <span><i class="dot" style="background:var(--ext)"></i>Externo <b style="color:var(--text)">${fmtMs(ext)}</b> em ${spans.length} chamada(s)${r.spansDropped ? ` +${r.spansDropped} não registradas` : ''}</span>
     <span>Memória pico <b style="color:var(--text)">${fmtMem(r.memPeak)}</b> (reservado ${fmtMem(r.mem)})</span>
   </div>`;
-  if (!spans.length) return summary + '<p class="muted" style="font-size:12px">Nenhuma chamada a outros sistemas nesta requisição.</p>';
+  const trace = `<div class="row muted" style="font-size:12px;gap:12px;margin-bottom:8px">
+    <span>Servidor <b style="color:var(--text)">${esc(r.server)}</b></span>
+    <span>trace <span class="route-name">${esc(r.traceId)}</span></span>
+    ${r.parentSpanId ? `<button onclick="event.stopPropagation(); showTrace('${r.traceId}')">Chamada por outra requisição: ver o trace</button>` : ''}
+  </div>`;
+  if (!r.detailed) return trace + summary + `<p class="muted" style="font-size:12px">Chamadas filhas não gravadas (amostragem): ${r.extCalls} chamada(s), ${fmtMs(r.extMs)} no total. Requisições lentas ou com erro sempre são detalhadas.</p>`;
+  if (!spans.length) return trace + summary + '<p class="muted" style="font-size:12px">Nenhuma chamada a outros sistemas nesta requisição.</p>';
   const rows = spans.map(s => {
     const d = s.detail;
     const http = d ? [d.status != null && `HTTP ${d.status}`, d.dns && `DNS ${fmtMs(d.dns)}`, d.connect && `conexão ${fmtMs(d.connect)}`,
@@ -238,76 +345,161 @@ function waterfall(r) {
     return `<div class="wf-row">
       <div class="wf-label"><span class="badge t-${esc(s.type)}">${esc(typeLabel[s.type] || s.type)}</span>
         <span class="muted">${esc(s.target)}</span> <span title="${esc(s.op)}">${esc(s.op)}</span>
-        ${http ? `<div class="muted" style="font-size:11px">${esc(http)}</div>` : ''}
+        ${http ? `<div class="muted" style="font-size:11px">${esc(http)}${s.type === 'http' && s.id ? ` · <a href="#" onclick="event.preventDefault(); event.stopPropagation(); showTrace('${r.traceId}')">ver a requisição chamada</a>` : ''}</div>` : ''}
         ${s.error ? `<div class="err-msg">${esc(s.error)}</div>` : ''}</div>
       <div class="wf-track"><i style="left:${100 * s.at / total}%;width:max(2px,${100 * s.ms / total}%);background:${s.ok ? 'var(--ext)' : 'var(--down)'}"></i></div>
       <div class="num ${s.ms > 1000 ? 'slow' : ''}" style="width:70px">${fmtMs(s.ms)}</div>
     </div>`;
   }).join('');
-  return summary + `<div class="wf">${rows}</div>`;
+  return trace + summary + `<div class="wf">${rows}</div>`;
 }
 
-function feedBlock(t, requests) {
-  if (!requests.length) return '<p class="muted">Sem acessos.</p>';
-  const rows = requests.map(r => {
-    const isNew = !seen.has(r.id) && seen.size > 0;
-    const open = expanded.has(r.id);
-    const url = r.route + (r.query ? '?' + r.query : '');
-    const calls = (r.spans || []).length;
-    return `<tr class="route ${isNew ? 'new' : ''} ${open ? 'selected' : ''}" onclick="toggleRequest('${r.id}')">
-      <td class="muted">${open ? '▾' : '▸'} ${new Date(r.ts).toLocaleTimeString('pt-BR')}</td>
-      <td class="method">${r.method}</td>
-      <td><a href="${esc(siteBase(t) + url)}" target="_blank" onclick="event.stopPropagation()">${esc(url)}</a>${r.error ? `<div class="err-msg">${esc(r.error)}</div>` : ''}</td>
-      <td><span class="${codeClass(r.status)}">${r.status}</span></td>
-      <td class="num ${r.ms > 1000 ? 'slow' : ''}">${fmtMs(r.ms)}</td>
-      <td class="num">${fmtMs(r.cpuMs)}</td>
-      <td class="num">${fmtMem(r.memPeak)}</td>
-      <td class="num">${calls ? `${fmtMs(r.extMs)} <span class="muted">· ${calls}×</span>` : '<span class="muted">–</span>'}</td>
-      <td>${timeBar(r.ms, r.cpuMs, r.extMs)}</td>
-    </tr>${open ? `<tr class="detail"><td colspan="9">${waterfall(r)}</td></tr>` : ''}`;
-  }).join('');
+function feedTable(t, requests) {
+  const html = dataTable('feed', requests, [
+    { key: 'ts', label: 'Hora', html: r => `<span class="muted">${expanded.has(r.id) ? '▾' : '▸'} ${new Date(r.ts).toLocaleTimeString('pt-BR')}</span>` },
+    { key: 'method', label: 'Método', html: r => `<span class="method">${r.method}</span>` },
+    { key: 'url', label: 'URL', sort: r => (r.path || r.route) + (r.query ? '?' + r.query : ''), html: r => {
+        const url = (r.path || r.route) + (r.query ? '?' + r.query : '');
+        const named = r.path && r.path !== r.route;
+        return `<a href="${esc(siteBase(t) + url)}" target="_blank" onclick="event.stopPropagation()">${esc(url)}</a>`
+          + (named ? ` <span class="route-name muted">${esc(r.route)}</span>` : '')
+          + (r.parentSpanId ? ` <span class="badge t-http" title="Requisição feita por outro sistema monitorado (mesmo trace)">↳ chamada</span>` : '')
+          + (r.error ? `<div class="err-msg">${esc(r.error)}</div>` : '');
+      } },
+    { key: 'server', label: 'Servidor', html: r => `<span class="muted">${esc(r.server)}</span>` },
+    { key: 'status', label: 'Status', num: true, html: r => `<span class="${codeClass(r.status)}">${r.status}</span>` },
+    { key: 'ms', label: 'Tempo', num: true, cls: r => r.ms > 1000 ? 'slow' : '', html: r => fmtMs(r.ms) },
+    { key: 'cpuMs', label: 'CPU', num: true, html: r => fmtMs(r.cpuMs) },
+    { key: 'memPeak', label: 'Memória', num: true, html: r => fmtMem(r.memPeak) },
+    { key: 'extMs', label: 'Externo', num: true, html: r => r.extCalls ? `${fmtMs(r.extMs)} <span class="muted">· ${r.extCalls}×</span>` : '<span class="muted">–</span>' },
+    { key: 'share', label: 'Onde o tempo vai', num: true, sort: r => r.ms ? r.extMs / r.ms : 0, html: r => timeBar(r.ms, r.cpuMs, r.extMs) },
+  ], {
+    def: ['ts', 'desc'], cls: 'feed', empty: 'Sem acessos.',
+    rowAttrs: r => `class="click ${!seen.has(r.id) && seen.size ? 'new' : ''} ${expanded.has(r.id) ? 'selected' : ''}" onclick="toggleRequest('${r.id}')"`,
+    after: (r, n) => expanded.has(r.id) ? `<tr class="detail"><td colspan="${n}">${waterfall(r)}</td></tr>` : '',
+  });
   requests.forEach(r => seen.add(r.id));
-  return `<div class="table-wrap"><table class="feed">
-    <thead><tr><th>Hora</th><th></th><th>URL</th><th>Status</th><th class="num">Tempo</th><th class="num">CPU</th><th class="num">Memória</th>
-      <th class="num">Externo</th><th>Onde o tempo vai</th></tr></thead>
-    <tbody>${rows}</tbody></table></div>`;
+  return html;
 }
 
-function toggleRequest(id) {
-  expanded.has(id) ? expanded.delete(id) : expanded.add(id);
+function serversTable(list) {
+  return dataTable('servers', list, [
+    { key: 'server', label: 'Servidor', html: s => `<b>${esc(s.server)}</b>` },
+    { key: 'hits', label: 'Requisições', num: true, html: s => s.hits },
+    { key: 'serverErrors', label: '5xx', num: true, cls: s => s.serverErrors ? 'fail' : 'muted', html: s => s.serverErrors },
+    { key: 'avgMs', label: 'Tempo médio', num: true, html: s => fmtMs(s.avgMs) },
+    { key: 'p95Ms', label: 'p95', num: true, cls: s => s.p95Ms > 1000 ? 'slow' : '', html: s => fmtMs(s.p95Ms) },
+    { key: 'avgCpuMs', label: 'CPU média', num: true, html: s => fmtMs(s.avgCpuMs) },
+    { key: 'avgMemPeak', label: 'Memória média', num: true, html: s => fmtMem(s.avgMemPeak) },
+    { key: 'lastSeen', label: 'Último acesso', num: true, html: s => `<span class="muted">${fmtTime(s.lastSeen)}</span>` },
+  ], {
+    def: ['server', 'asc'], empty: 'Nenhum servidor enviou dados ainda.',
+    rowAttrs: s => `class="click ${serverFilter === s.server ? 'selected' : ''}" data-server="${esc(s.server)}" onclick="selectServer(this.dataset.server)"`,
+  });
+}
+
+function incidentsTable(list) {
+  return dataTable('incidents', list, [
+    { key: 'status', label: 'Status', html: i => `<span class="pill ${i.status}">${label[i.status]}</span>` },
+    { key: 'reason', label: 'Motivo', html: i => esc(i.reason) },
+    { key: 'startedAt', label: 'Início', num: true, html: i => new Date(i.startedAt).toLocaleString('pt-BR') },
+    { key: 'duration', label: 'Duração', num: true, sort: i => (i.endedAt ? new Date(i.endedAt) : new Date()) - new Date(i.startedAt),
+      html: i => fmtDur(i.startedAt, i.endedAt) + (i.endedAt ? '' : ' <b class="fail">em aberto</b>') },
+  ], { def: ['startedAt', 'desc'], empty: 'Nenhum incidente registrado.' });
+}
+
+// ---------- Ações ----------
+
+function selectSite(id) {
+  if (id === selected) return;
+  selected = id; filter = null; serverFilter = null; traceFilter = null; openRoute = null; routeChildren = []; expanded.clear(); seen.clear();
+  Object.values(views).forEach(v => v.page = 0);
+  store.set('site', id);
+  history.replaceState(null, '', '#' + encodeURIComponent(id));
   refresh();
 }
-
-function selectRoute(target, method, route) {
-  const same = filter && filter.target === target && filter.method === method && filter.route === route;
-  filter = same ? null : { target, method, route };
+function selectRoute(method, route) {
+  const same = filter && filter.method === method && filter.route === route;
+  filter = same ? null : { method, route };
+  if (views.feed) views.feed.page = 0;
   refresh();
 }
+function clearFilter() { filter = null; refresh(); }
+function selectServer(name) { serverFilter = serverFilter === name ? null : name; if (views.feed) views.feed.page = 0; refresh(); }
+function showTrace(traceId) {
+  traceFilter = traceId; filter = null; serverFilter = null;
+  if (views.feed) views.feed.page = 0;
+  refresh().then(() => document.getElementById('acessos')?.scrollIntoView({ behavior: 'smooth' }));
+}
+function toggleRoute(method, route) {
+  openRoute = isOpen({ method, route }) ? null : { method, route };
+  routeChildren = [];
+  if (views.children) views.children.page = 0;
+  refresh();
+}
+function showRouteRequests(method, route) {
+  filter = { method, route };
+  if (views.feed) views.feed.page = 0;
+  refresh().then(() => document.getElementById('acessos')?.scrollIntoView({ behavior: 'smooth' }));
+}
+function toggleRequest(id) { expanded.has(id) ? expanded.delete(id) : expanded.add(id); refresh(); }
+async function checkNow(id, btn) {
+  btn.disabled = true; btn.textContent = 'Checando…';
+  await fetch(`/api/targets/${id}/check`, { method: 'POST' });
+  refresh();
+}
+async function chaos(mode, btn) {
+  btn.textContent += ' ✓';
+  await fetch(`${SITE_DEMO}/demo/chaos.php?mode=${mode}`, { mode: 'no-cors' });
+  setTimeout(() => btn.textContent = btn.textContent.replace(' ✓', ''), 1500);
+}
 
-async function renderTargets() {
-  const targets = await json('/api/targets');
-  const [histories, routes, deps, feeds] = await Promise.all([
-    Promise.all(targets.map(t => json(`/api/targets/${t.id}/history`))),
-    Promise.all(targets.map(t => json(`/api/targets/${t.id}/routes`))),
-    Promise.all(targets.map(t => json(`/api/targets/${t.id}/dependencies`))),
-    Promise.all(targets.map(t => {
-      const f = filter && filter.target === t.id ? `&method=${filter.method}&route=${encodeURIComponent(filter.route)}` : '';
-      return json(`/api/targets/${t.id}/requests?limit=40${f}`);
-    })),
-  ]);
+// ---------- Render ----------
+
+function renderSites() {
+  document.getElementById('sites').innerHTML = targets.map(t => `
+    <button class="site ${t.id === selected ? 'active' : ''}" onclick="selectSite('${t.id}')">
+      <div class="name"><span>${esc(t.name)}</span><span class="pill ${t.status}">${label[t.status]}</span></div>
+      <div class="host">${esc(hostOf(t.url))}</div>
+      <div class="mini">
+        <span>uptime <b>${t.uptimePercent == null ? '–' : t.uptimePercent.toFixed(1) + '%'}</b></span>
+        <span>última <b>${fmtMs(t.last?.latencyMs)}</b></span>
+      </div>
+    </button>`).join('');
 
   const worst = ['Down', 'Degraded', 'Unknown', 'Up'].find(s => targets.some(t => t.status === s)) || 'Unknown';
   const overall = document.getElementById('overall');
   overall.className = `pill ${worst}`;
   overall.textContent = worst === 'Up' ? 'Tudo operacional' : label[worst];
+}
 
-  document.getElementById('targets').innerHTML = targets.map((t, i) => {
-    const h = histories[i], last = t.last;
-    return `<section class="card">
+async function renderSelected() {
+  const t = targets.find(x => x.id === selected);
+  if (!t) return;
+  const f = (filter ? `&method=${filter.method}&route=${encodeURIComponent(filter.route)}` : '')
+    + (serverFilter ? `&server=${encodeURIComponent(serverFilter)}` : '')
+    + (traceFilter ? `&trace=${traceFilter}` : '');
+  const children = openRoute
+    ? json(`/api/targets/${t.id}/routes/children?method=${openRoute.method}&route=${encodeURIComponent(openRoute.route)}`)
+    : Promise.resolve([]);
+  const [h, routes, deps, feed, incidents, kids, servers] = await Promise.all([
+    json(`/api/targets/${t.id}/history`),
+    json(`/api/targets/${t.id}/routes`),
+    json(`/api/targets/${t.id}/dependencies`),
+    json(`/api/targets/${t.id}/requests?limit=500${f}`),
+    json('/api/incidents'),
+    children,
+    json(`/api/targets/${t.id}/servers`),
+  ]);
+  routeChildren = kids;
+  const last = t.last;
+
+  document.getElementById('main').innerHTML = `
+    <section class="card">
       <div class="row">
         <h2>${esc(t.name)}</h2><span class="pill ${t.status}">${label[t.status]}</span>
         <a href="${esc(t.url)}" target="_blank" class="muted">${esc(t.url)}</a>
-        <span class="spacer" style="flex:1"></span>
+        <span style="flex:1"></span>
         <span class="muted">desde ${fmtTime(t.statusSince)}</span>
         <button onclick="checkNow('${t.id}', this)">Checar agora</button>
       </div>
@@ -324,60 +516,70 @@ async function renderTargets() {
         <div><h3>Tempo de resposta</h3>${chart(h)}</div>
         <div><h3>Health do servidor PHP <span style="text-transform:none">· ${esc(last?.healthStatus ?? '–')} ${last?.healthLatencyMs ? '· ' + fmtMs(last.healthLatencyMs) : ''}</span></h3>${healthBlock(last?.health)}</div>
       </div>
-      <div class="section">
-        <h3>Rotas acessadas <span style="text-transform:none">· ${routes[i].reduce((s, r) => s + r.hits, 0)} acessos · clique numa rota para filtrar o feed</span></h3>
-        ${routesBlock(t, routes[i])}
-        <div class="legend muted"><i class="dot" style="background:var(--cpu)"></i>CPU <i class="dot" style="background:var(--ext)"></i>esperando outros sistemas <i class="dot" style="background:var(--line)"></i>resto (I/O local, rede, fila)</div>
+    </section>
+
+    <section class="card">
+      <h3>Servidores <span style="text-transform:none">· clique num servidor para filtrar os acessos</span></h3>
+      ${serversTable(servers)}
+    </section>
+
+    <section class="card">
+      <h3>Rotas acessadas <span style="text-transform:none">· ${routes.reduce((s, r) => s + r.hits, 0)} acessos · clique numa rota para ver as chamadas que a compõem (SQL, HTTP, Redis, sessão)</span></h3>
+      ${routesTable(t, routes)}
+      <div class="legend muted"><i class="dot" style="background:var(--cpu)"></i>CPU <i class="dot" style="background:var(--ext)"></i>esperando outros sistemas <i class="dot" style="background:var(--line)"></i>resto (I/O local, rede, fila)</div>
+    </section>
+
+    <section class="card">
+      <h3>Sistemas externos <span style="text-transform:none">· banco, HTTP, Redis e sessão chamados pelo site</span></h3>
+      ${depsTable(deps)}
+    </section>
+
+    <section class="card" id="acessos">
+      <div class="row" style="margin-bottom:8px"><h3 style="margin:0">Acessos</h3><span class="muted" style="font-size:12px">clique num acesso para ver as chamadas</span>
+        ${filter ? `<span class="chip">${filter.method} ${esc(filter.route)}<button onclick="clearFilter()" aria-label="Limpar filtro">✕</button></span>` : ''}
+        ${serverFilter ? `<span class="chip">servidor ${esc(serverFilter)}<button onclick="selectServer(serverFilter)" aria-label="Limpar filtro de servidor">✕</button></span>` : ''}
+        ${traceFilter ? `<span class="chip">trace ${esc(traceFilter.slice(0, 12))}…<button onclick="traceFilter=null; refresh()" aria-label="Limpar filtro de trace">✕</button></span>` : ''}</div>
+      ${feedTable(t, feed)}
+    </section>
+
+    <section class="card">
+      <h3>Incidentes</h3>
+      ${incidentsTable(incidents.filter(i => i.targetId === t.id))}
+    </section>
+
+    ${t.url.startsWith(SITE_DEMO) ? `<section class="card">
+      <h3>Simulação (protótipo)</h3>
+      <p class="muted">Muda o comportamento do site de exemplo via <code>/demo/chaos.php</code>.</p>
+      <div class="row">
+        <button onclick="chaos('ok', this)">Normal</button>
+        <button onclick="chaos('slow', this)">Lento</button>
+        <button onclick="chaos('error', this)">Erro 500</button>
+        <button onclick="chaos('down', this)">Fora do ar (timeout)</button>
       </div>
-      <div class="section">
-        <h3>Sistemas externos <span style="text-transform:none">· banco, APIs e serviços chamados pelo site</span></h3>
-        ${depsBlock(deps[i])}
-      </div>
-      <div class="section">
-        <div class="row" style="margin-bottom:8px"><h3 style="margin:0">Acessos em tempo real</h3><span class="muted" style="font-size:12px">clique num acesso para ver as chamadas</span>
-          ${filter && filter.target === t.id ? `<span class="chip">${filter.method} ${esc(filter.route)}<button onclick="filter=null;refresh()">✕</button></span>` : ''}</div>
-        ${feedBlock(t, feeds[i])}
-      </div>
-    </section>`;
-  }).join('');
+    </section>` : ''}`;
 }
 
-async function renderIncidents() {
-  const list = await fetch('/api/incidents').then(r => r.json());
-  document.querySelector('#incidents tbody').innerHTML = list.length
-    ? list.slice(0, 20).map(i => `<tr>
-        <td><span class="pill ${i.status}">${label[i.status]}</span></td>
-        <td>${esc(i.targetName)}</td><td>${esc(i.reason)}</td>
-        <td>${new Date(i.startedAt).toLocaleString('pt-BR')}</td>
-        <td>${fmtDur(i.startedAt, i.endedAt)}${i.endedAt ? '' : ' <b class="fail">em aberto</b>'}</td></tr>`).join('')
-    : '<tr><td colspan="5" class="muted">Nenhum incidente registrado.</td></tr>';
-}
-
+let busy = false;
 async function refresh() {
+  if (busy) return;
+  busy = true;
   try {
-    await Promise.all([renderTargets(), renderIncidents()]);
+    targets = await json('/api/targets');
+    if (!targets.some(t => t.id === selected)) selected = targets[0]?.id;
+    renderSites();
+    await renderSelected();
     document.getElementById('updated').textContent = `atualizado ${new Date().toLocaleTimeString('pt-BR')}`;
   } catch (e) {
     document.getElementById('updated').textContent = 'painel sem conexão com a API';
+  } finally {
+    busy = false;
   }
 }
 
-async function checkNow(id, btn) {
-  btn.disabled = true; btn.textContent = 'Checando…';
-  await fetch(`/api/targets/${id}/check`, { method: 'POST' });
-  await refresh();
-}
-
-document.getElementById('chaos').addEventListener('click', async e => {
-  const mode = e.target.dataset.mode;
-  if (!mode) return;
-  e.target.textContent += ' ✓';
-  await fetch(`${SITE}/demo/chaos.php?mode=${mode}`, { mode: 'no-cors' });
-  setTimeout(() => e.target.textContent = e.target.textContent.replace(' ✓', ''), 1500);
-});
-
+window.addEventListener('hashchange', () => selectSite(decodeURIComponent(location.hash.slice(1))));
 refresh();
-setInterval(refresh, 2000);
+// Não redesenha enquanto um seletor está aberto/focado (fecharia a lista).
+setInterval(() => { if (document.activeElement?.tagName !== 'SELECT') refresh(); }, 2000);
 </script>
 </body>
 </html>

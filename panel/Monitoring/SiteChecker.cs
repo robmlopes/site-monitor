@@ -7,10 +7,10 @@ public sealed class SiteChecker(IHttpClientFactory httpFactory, StatusStore stor
 {
     public async Task<CheckResult> CheckAsync(TargetOptions target, CancellationToken ct)
     {
-        var http = httpFactory.CreateClient("monitor");
+        var http = httpFactory.CreateClient(target.HttpClientName);
         var timeout = TimeSpan.FromSeconds(target.TimeoutSeconds);
 
-        var (reachable, code, latency, error) = await ProbeAsync(http, target.Url, timeout, ct);
+        var (reachable, code, latency, error) = await ProbeAsync(http, target.CheckUrl ?? target.Url, timeout, ct);
 
         string? healthStatus = null;
         double? healthLatency = null;
@@ -25,7 +25,9 @@ public sealed class SiteChecker(IHttpClientFactory httpFactory, StatusStore stor
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 cts.CancelAfter(timeout);
                 using var resp = await http.SendAsync(req, cts.Token);
-                var body = await resp.Content.ReadAsStringAsync(cts.Token);
+                // Bytes, não string: o health é JSON UTF-8, e uma página de erro do site pode vir com um charset
+                // que o .NET não conhece (o VO responde 404 com "charset=CP1252").
+                var body = await resp.Content.ReadAsByteArrayAsync(cts.Token);
                 healthLatency = sw.Elapsed.TotalMilliseconds;
                 if (resp.IsSuccessStatusCode)
                 {

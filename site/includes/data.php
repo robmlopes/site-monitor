@@ -18,7 +18,7 @@ function produto($id)
     return $row ? $row : null;
 }
 
-/** Cotação do dólar via file_get_contents (medido automaticamente pelo MONITOR_AUTO_HTTP). */
+/** Cotação do dólar via file_get_contents (medido automaticamente: auto_http do agente). */
 function cotacao_dolar()
 {
     $ctx = stream_context_create(array('http' => array('timeout' => 2)));

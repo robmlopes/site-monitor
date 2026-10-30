@@ -8,8 +8,12 @@ obj/
 *.user
 
 # Dados gerados em runtime pelo site
-site/monitor/data/*
-!site/monitor/data/.htaccess
-site/monitor/config.php
 site/demo/chaos.txt
 site/data/
+
+# Traces gravados pelo agente e configuração local de cada servidor
+/data/
+agent/config.local.php
+
+# Sites monitorados nesta máquina (painel)
+panel/appsettings.Local.json

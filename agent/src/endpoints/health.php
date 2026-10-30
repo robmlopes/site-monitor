@@ -1,10 +1,10 @@
 <?php
 /**
- * Endpoint de health para o painel de monitoramento.
- * Compatível com PHP 7.0 — copie a pasta "monitor/" para a raiz do site real.
+ * Health do servidor PHP para o painel: versão, memória, disco, OPcache, sessão e o próprio agente.
  */
 
-require __DIR__ . '/bootstrap.php';
+require __DIR__ . '/auth.php';
+$config = array('db' => Monitor::config('health_db'), 'writable' => array(Monitor::config('data_dir')));
 
 $started = microtime(true);
 $checks = array();
@@ -51,6 +51,7 @@ foreach ($config['writable'] as $dir) {
     });
 }
 
+if (Monitor::config('health_session_check', true)) {
 // Nunca devolver session.save_path cru: com redis/memcached ele costuma levar a senha.
 $checks[] = run_check('session', function () {
     $handler = ini_get('session.save_handler');
@@ -80,8 +81,9 @@ $checks[] = run_check('session', function () {
     fclose($fp);
     return "$handler {$url['host']}:$port alcançável";
 });
+}
 
-$root = dirname(__DIR__);
+$root = Monitor::config('app_root');
 $diskFree = @disk_free_space($root);
 $diskTotal = @disk_total_space($root);
 
@@ -115,6 +117,8 @@ echo json_encode(array(
         'sapi'         => PHP_SAPI,
         'os'           => PHP_OS,
         'memory_limit' => ini_get('memory_limit'),
+        'charset'      => ini_get('default_charset'),
+        'xdebug'       => extension_loaded('xdebug'),
         'max_exec'     => (int) ini_get('max_execution_time'),
         'extensions'   => count(get_loaded_extensions()),
     ),
@@ -129,5 +133,12 @@ echo json_encode(array(
     'load'         => $load === false ? null : $load,
     'opcache'      => $opcache,
     'checks'       => $checks,
+    'agent'        => array(
+        'version'     => Monitor::VERSION,
+        'server'      => Monitor::config('server_name'),
+        'site'        => Monitor::$site,
+        'sample_rate' => Monitor::config('sample_rate'),
+        'slow_ms'     => Monitor::config('slow_ms'),
+    ),
     'duration_ms'  => round((microtime(true) - $started) * 1000, 2),
 ));
