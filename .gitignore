@@ -1,0 +1,14 @@
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+# .NET
+bin/
+obj/
+.vs/
+*.user
+
+# Dados gerados em runtime pelo site
+site/monitor/data/*
+!site/monitor/data/.htaccess
+site/monitor/config.php
+site/demo/chaos.txt

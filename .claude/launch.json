@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "site-php",
+      "runtimeExecutable": "php",
+      "runtimeArgs": ["-d", "xdebug.profiler_enable=0", "-d", "xdebug.remote_autostart=0", "-S", "localhost:8080", "-t", "site", "router.php"],
+      "port": 8080
+    },
+    {
+      "name": "painel",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "panel", "--launch-profile", "http"],
+      "port": 5050
+    }
+  ]
+}

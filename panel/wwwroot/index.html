@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor</title>
+<style>
+  :root {
+    --bg: #0f1216; --panel: #171b21; --line: #262c35; --text: #e6e9ee; --muted: #8b94a3;
+    --up: #2fb67c; --degraded: #e0a526; --down: #e5484d; --unknown: #5b6472; --accent: #5b8def;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .spacer { flex: 1; }
+  header small { color: var(--muted); }
+  main { padding: 24px; max-width: 1200px; margin: 0 auto; display: grid; gap: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  .card h2 { margin: 0; font-size: 15px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .muted { color: var(--muted); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+  .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .Up { color: var(--up); background: color-mix(in srgb, var(--up) 15%, transparent); }
+  .Degraded { color: var(--degraded); background: color-mix(in srgb, var(--degraded) 15%, transparent); }
+  .Down { color: var(--down); background: color-mix(in srgb, var(--down) 15%, transparent); }
+  .Unknown { color: var(--unknown); background: color-mix(in srgb, var(--unknown) 20%, transparent); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 16px 0; }
+  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .strip { display: flex; gap: 2px; height: 26px; margin: 6px 0 14px; }
+  .strip i { flex: 1; border-radius: 2px; min-width: 2px; }
+  svg.chart { width: 100%; height: 120px; display: block; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } main { padding: 16px; } }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  th { color: var(--muted); font-weight: 500; }
+  button { background: var(--line); color: var(--text); border: 1px solid #343b46; border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; }
+  button:hover { border-color: var(--accent); }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+  .ok { color: var(--up); } .fail { color: var(--down); }
+  a { color: var(--accent); }
+  .section { margin-top: 22px; }
+  .table-wrap { overflow-x: auto; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.route { cursor: pointer; }
+  tr.route:hover td { background: #1d222a; }
+  tr.route.selected td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .code { display: inline-block; min-width: 38px; text-align: center; border-radius: 4px; padding: 0 6px; font-weight: 600; font-size: 12px; }
+  .c2 { color: var(--up); background: color-mix(in srgb, var(--up) 15%, transparent); }
+  .c3 { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+  .c4 { color: var(--degraded); background: color-mix(in srgb, var(--degraded) 15%, transparent); }
+  .c5 { color: var(--down); background: color-mix(in srgb, var(--down) 15%, transparent); }
+  .method { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); }
+  .dist { display: flex; height: 6px; width: 80px; border-radius: 3px; overflow: hidden; background: var(--line); margin-left: auto; }
+  .slow { color: var(--degraded); }
+  .feed td { font-size: 12.5px; padding: 4px 8px; }
+  .feed tr.new td { animation: flash 1.2s ease-out; }
+  @keyframes flash { from { background: color-mix(in srgb, var(--accent) 30%, transparent); } to { background: transparent; } }
+  .chip { display: inline-flex; gap: 6px; align-items: center; padding: 2px 4px 2px 10px; border-radius: 99px; background: var(--line); font-size: 12px; }
+  .chip button { padding: 0 6px; border: 0; background: transparent; }
+  .err-msg { color: var(--down); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Monitor</h1>
+  <span id="overall" class="pill Unknown">carregando</span>
+  <span class="spacer"></span>
+  <small id="updated"></small>
+</header>
+<main>
+  <div id="targets"></div>
+
+  <section class="card">
+    <h2>Incidentes</h2>
+    <table id="incidents"><thead><tr><th>Status</th><th>Alvo</th><th>Motivo</th><th>Início</th><th>Duração</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section class="card">
+    <h2>Simulação (protótipo)</h2>
+    <p class="muted">Muda o comportamento do site de exemplo via <code>/demo/chaos.php</code>.</p>
+    <div class="row" id="chaos">
+      <button data-mode="ok">Normal</button>
+      <button data-mode="slow">Lento</button>
+      <button data-mode="error">Erro 500</button>
+      <button data-mode="down">Fora do ar (timeout)</button>
+    </div>
+  </section>
+</main>
+
+<script>
+const SITE = 'http://localhost:8080';
+const colors = { Up: 'var(--up)', Degraded: 'var(--degraded)', Down: 'var(--down)', Unknown: 'var(--unknown)' };
+const label = { Up: 'Online', Degraded: 'Degradado', Down: 'Fora do ar', Unknown: 'Aguardando' };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtMs = v => v == null ? '–' : `${Math.round(v)} ms`;
+const fmtBytes = v => v == null ? '–' : v > 1e9 ? `${(v / 1e9).toFixed(1)} GB` : `${(v / 1e6).toFixed(1)} MB`;
+const fmtTime = t => t ? new Date(t).toLocaleTimeString('pt-BR') : '–';
+const fmtDur = (a, b) => { const s = Math.round(((b ? new Date(b) : new Date()) - new Date(a)) / 1000); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; };
+
+function pointStatus(r, slowMs) {
+  if (!r.reachable || r.statusCode == null || r.statusCode >= 500) return 'Down';
+  if (r.latencyMs > slowMs || (r.healthStatus && r.healthStatus !== 'ok')) return 'Degraded';
+  return 'Up';
+}
+
+function chart(history) {
+  const pts = history.slice(-90);
+  if (pts.length < 2) return '<p class="muted">Coletando dados…</p>';
+  const W = 600, H = 120, max = Math.max(200, ...pts.map(p => p.latencyMs)) * 1.1;
+  const x = i => (i / (pts.length - 1)) * W, y = v => H - (v / max) * (H - 10);
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.latencyMs).toFixed(1)}`).join('');
+  const fails = pts.map((p, i) => p.reachable && p.statusCode < 500 ? '' :
+    `<rect x="${x(i) - 3}" y="0" width="6" height="${H}" fill="var(--down)" opacity=".25"/>`).join('');
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    ${fails}
+    <path d="${line} L${W},${H} L0,${H}Z" fill="var(--accent)" opacity=".12"/>
+    <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+  </svg><div class="row muted" style="justify-content:space-between;font-size:12px"><span>${fmtTime(pts[0].at)}</span><span>máx ${Math.round(max / 1.1)} ms</span><span>${fmtTime(pts.at(-1).at)}</span></div>`;
+}
+
+function healthBlock(h) {
+  if (!h) return '<p class="muted">Sem dados do endpoint de health.</p>';
+  const disk = h.disk?.total ? `${fmtBytes(h.disk.free)} livres de ${fmtBytes(h.disk.total)}` : '–';
+  const op = h.opcache ? (h.opcache.enabled ? `ativo, hit ${h.opcache.hit_rate ?? '–'}%` : 'desativado') : 'indisponível';
+  return `<table>
+    <tr><th>PHP</th><td>${esc(h.php?.version)} (${esc(h.php?.sapi)}, ${esc(h.php?.os)})</td></tr>
+    <tr><th>memory_limit</th><td>${esc(h.php?.memory_limit)} · uso ${fmtBytes(h.memory?.usage)}</td></tr>
+    <tr><th>Disco</th><td>${disk}</td></tr>
+    <tr><th>OPcache</th><td>${op}</td></tr>
+    ${(h.checks || []).map(c => `<tr><th>${esc(c.name)}</th><td class="${c.status === 'ok' ? 'ok' : 'fail'}">${esc(c.status)} · ${esc(c.message)} <span class="muted">(${c.ms} ms)</span></td></tr>`).join('')}
+  </table>`;
+}
+
+// Filtro do feed de acessos: clique numa rota da tabela.
+let filter = null; // { target, method, route }
+const seen = new Set();
+const json = url => fetch(url).then(r => r.json());
+const codeClass = s => `code c${String(s)[0]}`;
+const siteBase = t => t.url.replace(/\/$/, '');
+
+function routesBlock(t, routes) {
+  if (!routes.length) return '<p class="muted">Nenhum acesso registrado ainda. Navegue no site para gerar tráfego.</p>';
+  const rows = routes.map(r => {
+    const sel = filter && filter.target === t.id && filter.method === r.method && filter.route === r.route;
+    const pct = n => (100 * n / r.hits).toFixed(1);
+    return `<tr class="route ${sel ? 'selected' : ''}" data-route="${esc(r.route)}" onclick="selectRoute('${t.id}','${r.method}',this.dataset.route)">
+      <td class="method">${r.method}</td>
+      <td><a href="${esc(siteBase(t) + r.route)}" target="_blank" onclick="event.stopPropagation()">${esc(r.route)}</a>
+          ${r.lastError ? `<div class="err-msg" title="${esc(r.lastError)}">${esc(r.lastError.slice(0, 80))}</div>` : ''}</td>
+      <td class="num"><div class="row" style="justify-content:flex-end;gap:8px">${r.hits}
+        <span class="dist"><i style="width:${pct(r.ok)}%;background:var(--up)"></i><i style="width:${pct(r.clientErrors)}%;background:var(--degraded)"></i><i style="width:${pct(r.serverErrors)}%;background:var(--down)"></i></span></div></td>
+      <td class="num">${r.ok}</td>
+      <td class="num ${r.clientErrors ? 'slow' : 'muted'}">${r.clientErrors}</td>
+      <td class="num ${r.serverErrors ? 'fail' : 'muted'}">${r.serverErrors}</td>
+      <td class="num">${fmtMs(r.avgMs)}</td>
+      <td class="num ${r.p95Ms > 1000 ? 'slow' : ''}">${fmtMs(r.p95Ms)}</td>
+      <td class="num">${fmtMs(r.maxMs)}</td>
+      <td class="num"><span class="${codeClass(r.lastStatus)}">${r.lastStatus}</span> <span class="muted">${fmtTime(r.lastSeen)}</span></td>
+    </tr>`;
+  }).join('');
+  return `<div class="table-wrap"><table>
+    <thead><tr><th></th><th>Rota</th><th class="num">Acessos</th><th class="num">2xx/3xx</th><th class="num">4xx</th><th class="num">5xx</th>
+      <th class="num">Média</th><th class="num">p95</th><th class="num">Máx</th><th class="num">Último</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+function feedBlock(t, requests) {
+  if (!requests.length) return '<p class="muted">Sem acessos.</p>';
+  const rows = requests.map(r => {
+    const isNew = !seen.has(r.id) && seen.size > 0;
+    const url = r.route + (r.query ? '?' + r.query : '');
+    return `<tr class="${isNew ? 'new' : ''}">
+      <td class="muted">${new Date(r.ts).toLocaleTimeString('pt-BR')}</td>
+      <td class="method">${r.method}</td>
+      <td><a href="${esc(siteBase(t) + url)}" target="_blank">${esc(url)}</a>${r.error ? `<div class="err-msg">${esc(r.error)}</div>` : ''}</td>
+      <td><span class="${codeClass(r.status)}">${r.status}</span></td>
+      <td class="num ${r.ms > 1000 ? 'slow' : ''}">${fmtMs(r.ms)}</td>
+      <td class="muted">${esc(r.referer || '')}</td>
+    </tr>`;
+  }).join('');
+  requests.forEach(r => seen.add(r.id));
+  return `<div class="table-wrap"><table class="feed">
+    <thead><tr><th>Hora</th><th></th><th>URL</th><th>Status</th><th class="num">Tempo</th><th>Veio de</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+function selectRoute(target, method, route) {
+  const same = filter && filter.target === target && filter.method === method && filter.route === route;
+  filter = same ? null : { target, method, route };
+  refresh();
+}
+
+async function renderTargets() {
+  const targets = await json('/api/targets');
+  const [histories, routes, feeds] = await Promise.all([
+    Promise.all(targets.map(t => json(`/api/targets/${t.id}/history`))),
+    Promise.all(targets.map(t => json(`/api/targets/${t.id}/routes`))),
+    Promise.all(targets.map(t => {
+      const f = filter && filter.target === t.id ? `&method=${filter.method}&route=${encodeURIComponent(filter.route)}` : '';
+      return json(`/api/targets/${t.id}/requests?limit=40${f}`);
+    })),
+  ]);
+
+  const worst = ['Down', 'Degraded', 'Unknown', 'Up'].find(s => targets.some(t => t.status === s)) || 'Unknown';
+  const overall = document.getElementById('overall');
+  overall.className = `pill ${worst}`;
+  overall.textContent = worst === 'Up' ? 'Tudo operacional' : label[worst];
+
+  document.getElementById('targets').innerHTML = targets.map((t, i) => {
+    const h = histories[i], last = t.last;
+    return `<section class="card">
+      <div class="row">
+        <h2>${esc(t.name)}</h2><span class="pill ${t.status}">${label[t.status]}</span>
+        <a href="${esc(t.url)}" target="_blank" class="muted">${esc(t.url)}</a>
+        <span class="spacer" style="flex:1"></span>
+        <span class="muted">desde ${fmtTime(t.statusSince)}</span>
+        <button onclick="checkNow('${t.id}', this)">Checar agora</button>
+      </div>
+      <div class="stats">
+        <div class="stat"><b>${t.uptimePercent == null ? '–' : t.uptimePercent.toFixed(1) + '%'}</b><span>uptime (${t.samples} checagens)</span></div>
+        <div class="stat"><b>${fmtMs(last?.latencyMs)}</b><span>última resposta</span></div>
+        <div class="stat"><b>${fmtMs(t.avgLatencyMs)}</b><span>latência média</span></div>
+        <div class="stat"><b>${fmtMs(t.p95LatencyMs)}</b><span>p95</span></div>
+        <div class="stat"><b>${last?.statusCode ?? '–'}</b><span>HTTP · ${esc(last?.error || 'ok')}</span></div>
+      </div>
+      <h3>Últimas checagens</h3>
+      <div class="strip">${h.slice(-60).map(r => `<i title="${fmtTime(r.at)} · ${r.statusCode ?? r.error} · ${Math.round(r.latencyMs)} ms" style="background:${colors[pointStatus(r, 1000)]}"></i>`).join('')}</div>
+      <div class="grid2">
+        <div><h3>Tempo de resposta</h3>${chart(h)}</div>
+        <div><h3>Health do servidor PHP <span style="text-transform:none">· ${esc(last?.healthStatus ?? '–')} ${last?.healthLatencyMs ? '· ' + fmtMs(last.healthLatencyMs) : ''}</span></h3>${healthBlock(last?.health)}</div>
+      </div>
+      <div class="section">
+        <h3>Rotas acessadas <span style="text-transform:none">· ${routes[i].reduce((s, r) => s + r.hits, 0)} acessos · clique numa rota para filtrar o feed</span></h3>
+        ${routesBlock(t, routes[i])}
+      </div>
+      <div class="section">
+        <div class="row" style="margin-bottom:8px"><h3 style="margin:0">Acessos em tempo real</h3>
+          ${filter && filter.target === t.id ? `<span class="chip">${filter.method} ${esc(filter.route)}<button onclick="filter=null;refresh()">✕</button></span>` : ''}</div>
+        ${feedBlock(t, feeds[i])}
+      </div>
+    </section>`;
+  }).join('');
+}
+
+async function renderIncidents() {
+  const list = await fetch('/api/incidents').then(r => r.json());
+  document.querySelector('#incidents tbody').innerHTML = list.length
+    ? list.slice(0, 20).map(i => `<tr>
+        <td><span class="pill ${i.status}">${label[i.status]}</span></td>
+        <td>${esc(i.targetName)}</td><td>${esc(i.reason)}</td>
+        <td>${new Date(i.startedAt).toLocaleString('pt-BR')}</td>
+        <td>${fmtDur(i.startedAt, i.endedAt)}${i.endedAt ? '' : ' <b class="fail">em aberto</b>'}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="muted">Nenhum incidente registrado.</td></tr>';
+}
+
+async function refresh() {
+  try {
+    await Promise.all([renderTargets(), renderIncidents()]);
+    document.getElementById('updated').textContent = `atualizado ${new Date().toLocaleTimeString('pt-BR')}`;
+  } catch (e) {
+    document.getElementById('updated').textContent = 'painel sem conexão com a API';
+  }
+}
+
+async function checkNow(id, btn) {
+  btn.disabled = true; btn.textContent = 'Checando…';
+  await fetch(`/api/targets/${id}/check`, { method: 'POST' });
+  await refresh();
+}
+
+document.getElementById('chaos').addEventListener('click', async e => {
+  const mode = e.target.dataset.mode;
+  if (!mode) return;
+  e.target.textContent += ' ✓';
+  await fetch(`${SITE}/demo/chaos.php?mode=${mode}`, { mode: 'no-cors' });
+  setTimeout(() => e.target.textContent = e.target.textContent.replace(' ✓', ''), 1500);
+});
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
