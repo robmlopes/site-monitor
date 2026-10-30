@@ -17,3 +17,6 @@ agent/config.local.php
 
 # Sites monitorados nesta máquina (painel)
 panel/appsettings.Local.json
+
+# Pacotes gerados por dotnet publish
+/publish/

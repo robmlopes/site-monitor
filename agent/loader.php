@@ -9,10 +9,11 @@
  *
  * Onde procurar o agente, em ordem: variável de ambiente MONITOR_HOME, diretiva monitor.home
  * do php.ini, a própria pasta deste arquivo (quando o .user.ini aponta direto para agent/loader.php)
- * e C:\monitor\agent.
+ * e as pastas padrão D:\monitor\agent e C:\monitor\agent.
  */
 call_user_func(function () {
-    foreach (array(getenv('MONITOR_HOME'), get_cfg_var('monitor.home'), __DIR__, 'C:/monitor/agent') as $home) {
+    foreach (array(getenv('MONITOR_HOME'), get_cfg_var('monitor.home'), __DIR__,
+        'D:/monitor/agent', 'C:/monitor/agent') as $home) {
         if ($home && is_file($file = rtrim($home, '\\/') . '/prepend.php')) {
             require $file;
             return;

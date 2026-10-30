@@ -22,8 +22,9 @@ Site: http://localhost:8080 · Serviços simulados: http://127.0.0.1:8070 · Pai
 
 ## Instalar num servidor (sites ZF2)
 
-1. Copie a pasta `agent/` para o servidor, ex.: `C:\monitor\agent`. Não é preciso instalar nada no IIS.
-   O pool de aplicação precisa poder gravar em `data_dir` (padrão: `C:\monitor\data`).
+1. Copie a pasta `agent/` para o servidor, ex.: `D:\monitor\agent` (e o painel em `D:\monitor\panel`).
+   Não é preciso instalar nada no IIS. O pool de aplicação precisa poder gravar em `data_dir`
+   (padrão: a pasta `data` ao lado do agente, ex.: `D:\monitor\data`).
 2. Opcional: `agent/config.local.php` com o que muda neste servidor (fica fora do git):
    ```php
    <?php return array('server_name' => 'WEB-01', 'sample_rate' => 0.05, 'token' => 'troque-isto');
@@ -38,7 +39,7 @@ Site: http://localhost:8080 · Serviços simulados: http://127.0.0.1:8070 · Pai
 
    **Nunca aponte o `.user.ini` direto para o agente fora do site**: se o arquivo não existir, o PHP dá erro
    fatal em todas as páginas. O loader só carrega o agente se ele existir (procura em `MONITOR_HOME`,
-   `monitor.home` do php.ini, na própria pasta e em `C:\monitor\agent`); sem ele o site segue normal.
+   `monitor.home` do php.ini, na própria pasta, em `D:\monitor\agent` e em `C:\monitor\agent`); sem ele o site segue normal.
    O `monitor.local.php` também não faz nada sem o agente.
 
 4. No painel, um alvo por site (em `panel/appsettings.Local.json`, fora do git; os alvos se mesclam por posição
