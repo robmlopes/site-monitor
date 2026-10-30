@@ -45,7 +45,7 @@
   a { color: var(--accent); }
   .section { margin-top: 22px; }
   .table-wrap { overflow-x: auto; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   tr.route { cursor: pointer; }
   tr.route:hover td { background: #1d222a; }
   tr.route.selected td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
@@ -63,6 +63,20 @@
   .chip { display: inline-flex; gap: 6px; align-items: center; padding: 2px 4px 2px 10px; border-radius: 99px; background: var(--line); font-size: 12px; }
   .chip button { padding: 0 6px; border: 0; background: transparent; }
   .err-msg { color: var(--down); font-size: 12px; }
+  :root { --cpu: #a78bfa; --ext: #38bdf8; }
+  .tbar { display: flex; width: 110px; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: middle; }
+  .legend { font-size: 12px; margin-top: 6px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; background: var(--line); }
+  .t-db { color: #fbbf24; } .t-http { color: var(--ext); } .t-soap { color: #f472b6; } .t-redis { color: #f87171; }
+  .ops { font-size: 12px; margin-top: 4px; font-family: ui-monospace, Consolas, monospace; }
+  .ops div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 560px; }
+  tr.detail td { background: #12151a; padding: 12px 14px; }
+  .wf-row { display: flex; align-items: center; gap: 12px; padding: 3px 0; font-size: 12px; }
+  .wf-label { width: 46%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wf-label div { white-space: normal; }
+  .wf-track { flex: 1; position: relative; height: 10px; background: var(--line); border-radius: 3px; }
+  .wf-track i { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
 </style>
 </head>
 <body>
@@ -143,6 +157,18 @@ const json = url => fetch(url).then(r => r.json());
 const codeClass = s => `code c${String(s)[0]}`;
 const siteBase = t => t.url.replace(/\/$/, '');
 
+const fmtMem = v => v == null ? '–' : v >= 1048576 ? `${(v / 1048576).toFixed(1)} MB` : `${Math.round(v / 1024)} KB`;
+const typeLabel = { db: 'Banco', http: 'HTTP', soap: 'SOAP', redis: 'Redis' };
+const expanded = new Set();
+
+// Barra que divide o tempo da requisição em CPU, espera por sistemas externos e o resto (I/O local, fila...).
+function timeBar(total, cpu, ext) {
+  if (!total) return '';
+  const c = Math.min(100, 100 * cpu / total), e = Math.min(100 - c, 100 * ext / total);
+  return `<span class="tbar" title="CPU ${Math.round(c)}% · externo ${Math.round(e)}% · outros ${Math.round(100 - c - e)}%">
+    <i style="width:${c}%;background:var(--cpu)"></i><i style="width:${e}%;background:var(--ext)"></i></span>`;
+}
+
 function routesBlock(t, routes) {
   if (!routes.length) return '<p class="muted">Nenhum acesso registrado ainda. Navegue no site para gerar tráfego.</p>';
   const rows = routes.map(r => {
@@ -154,39 +180,102 @@ function routesBlock(t, routes) {
           ${r.lastError ? `<div class="err-msg" title="${esc(r.lastError)}">${esc(r.lastError.slice(0, 80))}</div>` : ''}</td>
       <td class="num"><div class="row" style="justify-content:flex-end;gap:8px">${r.hits}
         <span class="dist"><i style="width:${pct(r.ok)}%;background:var(--up)"></i><i style="width:${pct(r.clientErrors)}%;background:var(--degraded)"></i><i style="width:${pct(r.serverErrors)}%;background:var(--down)"></i></span></div></td>
-      <td class="num">${r.ok}</td>
       <td class="num ${r.clientErrors ? 'slow' : 'muted'}">${r.clientErrors}</td>
       <td class="num ${r.serverErrors ? 'fail' : 'muted'}">${r.serverErrors}</td>
       <td class="num">${fmtMs(r.avgMs)}</td>
       <td class="num ${r.p95Ms > 1000 ? 'slow' : ''}">${fmtMs(r.p95Ms)}</td>
-      <td class="num">${fmtMs(r.maxMs)}</td>
+      <td class="num">${fmtMs(r.avgCpuMs)} <span class="muted">/ ${fmtMs(r.maxCpuMs)}</span></td>
+      <td class="num">${fmtMem(r.avgMemPeak)} <span class="muted">/ ${fmtMem(r.maxMemPeak)}</span></td>
+      <td class="num">${fmtMs(r.avgExtMs)} <span class="muted">· ${r.avgExtCalls.toFixed(1)}×</span></td>
+      <td>${timeBar(r.avgMs, r.avgCpuMs, r.avgExtMs)}</td>
       <td class="num"><span class="${codeClass(r.lastStatus)}">${r.lastStatus}</span> <span class="muted">${fmtTime(r.lastSeen)}</span></td>
     </tr>`;
   }).join('');
   return `<div class="table-wrap"><table>
-    <thead><tr><th></th><th>Rota</th><th class="num">Acessos</th><th class="num">2xx/3xx</th><th class="num">4xx</th><th class="num">5xx</th>
-      <th class="num">Média</th><th class="num">p95</th><th class="num">Máx</th><th class="num">Último</th></tr></thead>
+    <thead><tr><th></th><th>Rota</th><th class="num">Acessos</th><th class="num">4xx</th><th class="num">5xx</th>
+      <th class="num">Tempo médio</th><th class="num">p95</th><th class="num">CPU méd / máx</th><th class="num">Memória méd / máx</th>
+      <th class="num">Externo médio</th><th>Onde o tempo vai</th><th class="num">Último</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
+}
+
+function depsBlock(deps) {
+  if (!deps.length) return '<p class="muted">Nenhuma chamada a outros sistemas registrada.</p>';
+  const rows = deps.map(d => `<tr>
+      <td><span class="badge t-${esc(d.type)}">${esc(typeLabel[d.type] || d.type)}</span></td>
+      <td><b>${esc(d.target)}</b>
+        <div class="ops">${d.slowestOps.map(o => `<div title="${esc(o.op)}"><span class="muted">${o.calls}× · méd ${fmtMs(o.avgMs)} · máx ${fmtMs(o.maxMs)}${o.errors ? ` · <span class="fail">${o.errors} erro(s)</span>` : ''}</span> ${esc(o.op)}</div>`).join('')}</div>
+        ${d.lastError ? `<div class="err-msg">último erro: ${esc(d.lastError)}</div>` : ''}</td>
+      <td class="num">${d.calls}</td>
+      <td class="num ${d.errors ? 'fail' : 'muted'}">${d.errors}${d.errors ? ` <span class="muted">(${(100 * d.errors / d.calls).toFixed(0)}%)</span>` : ''}</td>
+      <td class="num">${fmtMs(d.avgMs)}</td>
+      <td class="num ${d.p95Ms > 1000 ? 'slow' : ''}">${fmtMs(d.p95Ms)}</td>
+      <td class="num">${fmtMs(d.maxMs)}</td>
+      <td class="num">${d.avgTtfbMs == null ? '<span class="muted">–</span>' : fmtMs(d.avgTtfbMs)}</td>
+      <td class="muted" style="font-size:12px">${d.routes.map(esc).join('<br>')}</td>
+      <td class="num muted">${fmtTime(d.lastSeen)}</td>
+    </tr>`).join('');
+  return `<div class="table-wrap"><table>
+    <thead><tr><th></th><th>Sistema · operações que mais somam tempo</th><th class="num">Chamadas</th><th class="num">Erros</th>
+      <th class="num">Média</th><th class="num">p95</th><th class="num">Máx</th><th class="num">1º byte</th><th>Usado por</th><th class="num">Última</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+function waterfall(r) {
+  const spans = r.spans || [];
+  const total = Math.max(r.ms, ...spans.map(s => s.at + s.ms), 1);
+  const ext = spans.reduce((a, s) => a + s.ms, 0);
+  const summary = `<div class="row muted" style="font-size:12px;gap:16px;margin-bottom:8px">
+    <span>Total <b style="color:var(--text)">${fmtMs(r.ms)}</b></span>
+    <span><i class="dot" style="background:var(--cpu)"></i>CPU <b style="color:var(--text)">${fmtMs(r.cpuMs)}</b> (usuário ${fmtMs(r.cpuUserMs)}, sistema ${fmtMs(r.cpuSysMs)})</span>
+    <span><i class="dot" style="background:var(--ext)"></i>Externo <b style="color:var(--text)">${fmtMs(ext)}</b> em ${spans.length} chamada(s)${r.spansDropped ? ` +${r.spansDropped} não registradas` : ''}</span>
+    <span>Memória pico <b style="color:var(--text)">${fmtMem(r.memPeak)}</b> (reservado ${fmtMem(r.mem)})</span>
+  </div>`;
+  if (!spans.length) return summary + '<p class="muted" style="font-size:12px">Nenhuma chamada a outros sistemas nesta requisição.</p>';
+  const rows = spans.map(s => {
+    const d = s.detail;
+    const http = d ? [d.status != null && `HTTP ${d.status}`, d.dns && `DNS ${fmtMs(d.dns)}`, d.connect && `conexão ${fmtMs(d.connect)}`,
+      d.tls && `TLS ${fmtMs(d.tls)}`, d.ttfb != null && `1º byte ${fmtMs(d.ttfb)}`, d.bytes != null && `${d.bytes} B`].filter(Boolean).join(' · ') : '';
+    return `<div class="wf-row">
+      <div class="wf-label"><span class="badge t-${esc(s.type)}">${esc(typeLabel[s.type] || s.type)}</span>
+        <span class="muted">${esc(s.target)}</span> <span title="${esc(s.op)}">${esc(s.op)}</span>
+        ${http ? `<div class="muted" style="font-size:11px">${esc(http)}</div>` : ''}
+        ${s.error ? `<div class="err-msg">${esc(s.error)}</div>` : ''}</div>
+      <div class="wf-track"><i style="left:${100 * s.at / total}%;width:max(2px,${100 * s.ms / total}%);background:${s.ok ? 'var(--ext)' : 'var(--down)'}"></i></div>
+      <div class="num ${s.ms > 1000 ? 'slow' : ''}" style="width:70px">${fmtMs(s.ms)}</div>
+    </div>`;
+  }).join('');
+  return summary + `<div class="wf">${rows}</div>`;
 }
 
 function feedBlock(t, requests) {
   if (!requests.length) return '<p class="muted">Sem acessos.</p>';
   const rows = requests.map(r => {
     const isNew = !seen.has(r.id) && seen.size > 0;
+    const open = expanded.has(r.id);
     const url = r.route + (r.query ? '?' + r.query : '');
-    return `<tr class="${isNew ? 'new' : ''}">
-      <td class="muted">${new Date(r.ts).toLocaleTimeString('pt-BR')}</td>
+    const calls = (r.spans || []).length;
+    return `<tr class="route ${isNew ? 'new' : ''} ${open ? 'selected' : ''}" onclick="toggleRequest('${r.id}')">
+      <td class="muted">${open ? '▾' : '▸'} ${new Date(r.ts).toLocaleTimeString('pt-BR')}</td>
       <td class="method">${r.method}</td>
-      <td><a href="${esc(siteBase(t) + url)}" target="_blank">${esc(url)}</a>${r.error ? `<div class="err-msg">${esc(r.error)}</div>` : ''}</td>
+      <td><a href="${esc(siteBase(t) + url)}" target="_blank" onclick="event.stopPropagation()">${esc(url)}</a>${r.error ? `<div class="err-msg">${esc(r.error)}</div>` : ''}</td>
       <td><span class="${codeClass(r.status)}">${r.status}</span></td>
       <td class="num ${r.ms > 1000 ? 'slow' : ''}">${fmtMs(r.ms)}</td>
-      <td class="muted">${esc(r.referer || '')}</td>
-    </tr>`;
+      <td class="num">${fmtMs(r.cpuMs)}</td>
+      <td class="num">${fmtMem(r.memPeak)}</td>
+      <td class="num">${calls ? `${fmtMs(r.extMs)} <span class="muted">· ${calls}×</span>` : '<span class="muted">–</span>'}</td>
+      <td>${timeBar(r.ms, r.cpuMs, r.extMs)}</td>
+    </tr>${open ? `<tr class="detail"><td colspan="9">${waterfall(r)}</td></tr>` : ''}`;
   }).join('');
   requests.forEach(r => seen.add(r.id));
   return `<div class="table-wrap"><table class="feed">
-    <thead><tr><th>Hora</th><th></th><th>URL</th><th>Status</th><th class="num">Tempo</th><th>Veio de</th></tr></thead>
+    <thead><tr><th>Hora</th><th></th><th>URL</th><th>Status</th><th class="num">Tempo</th><th class="num">CPU</th><th class="num">Memória</th>
+      <th class="num">Externo</th><th>Onde o tempo vai</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
+}
+
+function toggleRequest(id) {
+  expanded.has(id) ? expanded.delete(id) : expanded.add(id);
+  refresh();
 }
 
 function selectRoute(target, method, route) {
@@ -197,9 +286,10 @@ function selectRoute(target, method, route) {
 
 async function renderTargets() {
   const targets = await json('/api/targets');
-  const [histories, routes, feeds] = await Promise.all([
+  const [histories, routes, deps, feeds] = await Promise.all([
     Promise.all(targets.map(t => json(`/api/targets/${t.id}/history`))),
     Promise.all(targets.map(t => json(`/api/targets/${t.id}/routes`))),
+    Promise.all(targets.map(t => json(`/api/targets/${t.id}/dependencies`))),
     Promise.all(targets.map(t => {
       const f = filter && filter.target === t.id ? `&method=${filter.method}&route=${encodeURIComponent(filter.route)}` : '';
       return json(`/api/targets/${t.id}/requests?limit=40${f}`);
@@ -237,9 +327,14 @@ async function renderTargets() {
       <div class="section">
         <h3>Rotas acessadas <span style="text-transform:none">· ${routes[i].reduce((s, r) => s + r.hits, 0)} acessos · clique numa rota para filtrar o feed</span></h3>
         ${routesBlock(t, routes[i])}
+        <div class="legend muted"><i class="dot" style="background:var(--cpu)"></i>CPU <i class="dot" style="background:var(--ext)"></i>esperando outros sistemas <i class="dot" style="background:var(--line)"></i>resto (I/O local, rede, fila)</div>
       </div>
       <div class="section">
-        <div class="row" style="margin-bottom:8px"><h3 style="margin:0">Acessos em tempo real</h3>
+        <h3>Sistemas externos <span style="text-transform:none">· banco, APIs e serviços chamados pelo site</span></h3>
+        ${depsBlock(deps[i])}
+      </div>
+      <div class="section">
+        <div class="row" style="margin-bottom:8px"><h3 style="margin:0">Acessos em tempo real</h3><span class="muted" style="font-size:12px">clique num acesso para ver as chamadas</span>
           ${filter && filter.target === t.id ? `<span class="chip">${filter.method} ${esc(filter.route)}<button onclick="filter=null;refresh()">✕</button></span>` : ''}</div>
         ${feedBlock(t, feeds[i])}
       </div>

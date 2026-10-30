@@ -1,14 +1,30 @@
 <?php
+require_once __DIR__ . '/db.php';
+
 function produtos()
 {
-    return array(
-        1 => array('nome' => 'Café especial 250g', 'preco' => 39.90, 'categoria' => 'Mercearia'),
-        2 => array('nome' => 'Caneca de cerâmica', 'preco' => 49.00, 'categoria' => 'Casa'),
-        3 => array('nome' => 'Moedor manual', 'preco' => 189.90, 'categoria' => 'Utensílios'),
-        4 => array('nome' => 'Filtro de papel (100 un.)', 'preco' => 14.50, 'categoria' => 'Mercearia'),
-        5 => array('nome' => 'Chaleira bico de ganso', 'preco' => 259.00, 'categoria' => 'Utensílios'),
-        6 => array('nome' => 'Balança digital', 'preco' => 129.90, 'categoria' => 'Utensílios'),
-    );
+    $lista = array();
+    foreach (db()->query('SELECT id, nome, preco, categoria FROM produtos ORDER BY id') as $row) {
+        $lista[(int) $row['id']] = $row;
+    }
+    return $lista;
+}
+
+function produto($id)
+{
+    $st = db()->prepare('SELECT id, nome, preco, categoria FROM produtos WHERE id = ?');
+    $st->execute(array($id));
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    return $row ? $row : null;
+}
+
+/** Cotação do dólar via file_get_contents (medido automaticamente pelo MONITOR_AUTO_HTTP). */
+function cotacao_dolar()
+{
+    $ctx = stream_context_create(array('http' => array('timeout' => 2)));
+    $body = @file_get_contents(SERVICOS_URL . '/cotacao', false, $ctx);
+    $json = $body === false ? null : json_decode($body, true);
+    return $json ? $json['valor'] : null;
 }
 
 function preco($v)

@@ -11,6 +11,7 @@ function nav_links()
         '/busca.php'        => 'Busca',
         '/contato.php'      => 'Contato',
         '/api/produtos.php' => 'API JSON',
+        '/relatorio.php'    => 'Relatório (CPU)',
         '/lenta.php'        => 'Página lenta',
         '/erro.php'         => 'Erro 500',
         '/nao-existe.php'   => 'Página 404',

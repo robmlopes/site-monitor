@@ -12,3 +12,4 @@ site/monitor/data/*
 !site/monitor/data/.htaccess
 site/monitor/config.php
 site/demo/chaos.txt
+site/data/

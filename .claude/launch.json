@@ -4,13 +4,45 @@
     {
       "name": "site-php",
       "runtimeExecutable": "php",
-      "runtimeArgs": ["-d", "xdebug.profiler_enable=0", "-d", "xdebug.remote_autostart=0", "-S", "localhost:8080", "-t", "site", "router.php"],
+      "runtimeArgs": [
+        "-d",
+        "xdebug.profiler_enable=0",
+        "-d",
+        "xdebug.remote_autostart=0",
+        "-S",
+        "localhost:8080",
+        "-t",
+        "site",
+        "router.php"
+      ],
       "port": 8080
+    },
+    {
+      "name": "servicos",
+      "runtimeExecutable": "php",
+      "runtimeArgs": [
+        "-d",
+        "xdebug.profiler_enable=0",
+        "-d",
+        "xdebug.remote_autostart=0",
+        "-S",
+        "127.0.0.1:8070",
+        "-t",
+        "servicos",
+        "router.php"
+      ],
+      "port": 8070
     },
     {
       "name": "painel",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["run", "--project", "panel", "--launch-profile", "http"],
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "panel",
+        "--launch-profile",
+        "http"
+      ],
       "port": 5050
     }
   ]

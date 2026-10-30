@@ -30,7 +30,10 @@ api.MapPost("/targets/{id}/check", async (string id, StatusStore store, SiteChec
 api.MapGet("/targets/{id}/routes", (string id, StatusStore store, RequestStore requests) =>
     store.Find(id) is null ? Results.NotFound() : Results.Ok(requests.Routes(id)));
 
-api.MapGet("/targets/{id}/requests", (string id, string? method, string? route, int? limit, StatusStore store, RequestStore requests) =>
+api.MapGet("/targets/{id}/dependencies", (string id, StatusStore store, RequestStore requests) =>
+    store.Find(id) is null ? Results.NotFound() : Results.Ok(requests.Dependencies(id)));
+
+api.MapGet("/targets/{id}/requests",(string id, string? method, string? route, int? limit, StatusStore store, RequestStore requests) =>
     store.Find(id) is null ? Results.NotFound() : Results.Ok(requests.Recent(id, method, route, Math.Clamp(limit ?? 50, 1, 500))));
 
 api.MapGet("/incidents",(StatusStore store) => store.Incidents());

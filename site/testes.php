@@ -8,7 +8,12 @@ $rotas = array(
     array('GET', '/produto.php?id=1', 3),
     array('GET', '/produto.php?id=3', 3),
     array('GET', '/produto.php?id=5', 2),
+    array('GET', '/produto.php?id=2&cep=01310-100', 3),
+    array('GET', '/produto.php?id=4&cep=123', 1),
     array('GET', '/produto.php?id=99', 1),
+    array('POST', '/checkout.php?id=3', 2),
+    array('GET', '/relatorio.php?n=50000', 1),
+    array('GET', '/relatorio.php?n=150000', 1),
     array('GET', '/busca.php?q=caf%C3%A9', 3),
     array('GET', '/busca.php?q=moedor', 2),
     array('GET', '/api/produtos.php', 4),
@@ -63,7 +68,8 @@ async function gerar(qtd) {
     const [metodo, url] = sortear();
     const opts = { method: metodo };
     if (metodo === 'POST') {
-      opts.body = new URLSearchParams(url.includes('invalido') ? { nome: '' } : { nome: 'Teste', mensagem: 'Mensagem automática' });
+      opts.body = url.startsWith('/checkout') ? new URLSearchParams({ id: url.split('=')[1] })
+        : new URLSearchParams(url.includes('invalido') ? { nome: '' } : { nome: 'Teste', mensagem: 'Mensagem automática' });
     }
     const t = performance.now();
     let status;
