@@ -20,3 +20,6 @@ panel/appsettings.Local.json
 
 # Pacotes gerados por dotnet publish
 /publish/
+
+# Configuração local do coletor (ClickHouse desta máquina)
+collector/appsettings.Local.json

@@ -9,6 +9,17 @@
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
+    },
+    "clickhouse": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5051",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Monitor__ClickHouse__Url": "http://localhost:8123",
+        "MONITOR_CLICKHOUSE_PASSWORD": "devpass"
+      }
     }
   }
 }
