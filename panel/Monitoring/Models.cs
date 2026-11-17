@@ -11,6 +11,8 @@ public sealed class MonitorOptions
     /// <summary>Intervalo de leitura dos traces de cada servidor (TracesUrl/Nodes).</summary>
     public int RequestsIntervalSeconds { get; set; } = 2;
     public List<TargetOptions> Targets { get; set; } = [];
+    /// <summary>Com Url preenchida, rotas, acessos e dependências vêm do ClickHouse (coletor) e não dos servidores.</summary>
+    public ClickHouseOptions ClickHouse { get; set; } = new();
 }
 
 public sealed class TargetOptions
@@ -18,6 +20,8 @@ public sealed class TargetOptions
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
     public string Url { get; set; } = "";
+    /// <summary>Nome do site nos traces (service.name = Host do site) no ClickHouse. Padrão: o host da Url.</summary>
+    public string? Site { get; set; }
     /// <summary>URL da checagem de uptime, se não for a própria Url (ex.: um arquivo estático leve).</summary>
     public string? CheckUrl { get; set; }
     public string? HealthUrl { get; set; }

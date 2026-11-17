@@ -44,6 +44,18 @@
         "http"
       ],
       "port": 5050
+    },
+    {
+      "name": "painel-clickhouse",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "panel",
+        "--launch-profile",
+        "clickhouse"
+      ],
+      "port": 5051
     }
   ]
 }

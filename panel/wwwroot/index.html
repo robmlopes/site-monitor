@@ -16,6 +16,7 @@
   header h1 { font-size: 16px; margin: 0; font-weight: 600; }
   header .spacer { flex: 1; }
   header small { color: var(--muted); }
+  header label { font-size: 12px; color: var(--muted); }
   .layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 20px; padding: 20px 24px; max-width: 1600px; margin: 0 auto; align-items: start; }
   @media (max-width: 900px) { .layout { grid-template-columns: 1fr; padding: 16px; } }
   main { display: grid; gap: 20px; min-width: 0; }
@@ -108,6 +109,7 @@
   <h1>Monitor</h1>
   <span id="overall" class="pill Unknown">carregando</span>
   <span class="spacer"></span>
+  <label id="period" hidden>Período <select onchange="setPeriod(this.value)"></select></label>
   <small id="updated"></small>
 </header>
 <div class="layout">
@@ -128,7 +130,11 @@ const fmtMem = v => v == null ? '–' : v >= 1048576 ? `${(v / 1048576).toFixed(
 const fmtTime = t => t ? new Date(t).toLocaleTimeString('pt-BR') : '–';
 const fmtDur = (a, b) => { const s = Math.round(((b ? new Date(b) : new Date()) - new Date(a)) / 1000); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; };
 const codeClass = s => `code c${String(s)[0]}`;
-const json = url => fetch(url).then(r => r.json());
+const json = url => fetch(url).then(async r => {
+  if (r.ok) return r.json();
+  const body = await r.json().catch(() => ({}));
+  throw new Error(body.detail || `HTTP ${r.status}`);
+});
 const hostOf = url => { try { return new URL(url).host; } catch { return url; } };
 
 // Preferências por navegador (site escolhido, ordenação e linhas por tabela).
@@ -138,6 +144,22 @@ const store = {
 };
 
 let targets = [];
+// Fonte dos dados ('memory' ou 'clickhouse') e período das estatísticas (só ClickHouse).
+const PERIODS = [[15, '15 min'], [60, '1 hora'], [360, '6 horas'], [1440, '24 horas'], [10080, '7 dias'], [43200, '30 dias']];
+let info = { source: 'memory' };
+let minutes = store.get('minutes', null);
+const win = () => info.source === 'clickhouse' ? `minutes=${minutes}` : '';
+function setPeriod(v) { minutes = +v; store.set('minutes', minutes); seen.clear(); refresh(); }
+async function loadInfo() {
+  try { info = await json('/api/info'); } catch { return; }
+  if (info.source !== 'clickhouse') return;
+  const periods = PERIODS.filter(([m]) => m <= info.maxMinutes);
+  if (!periods.some(([m]) => m === minutes)) minutes = info.defaultMinutes;
+  if (!periods.some(([m]) => m === minutes)) periods.push([minutes, `${minutes} min`]);
+  const el = document.getElementById('period');
+  el.querySelector('select').innerHTML = periods.map(([m, l]) => `<option value="${m}" ${m === minutes ? 'selected' : ''}>${l}</option>`).join('');
+  el.hidden = false;
+}
 let selected = decodeURIComponent(location.hash.slice(1)) || store.get('site', null);
 let filter = null;            // { method, route } — filtra o feed de acessos
 let serverFilter = null;      // nome do servidor — filtra o feed de acessos
@@ -480,16 +502,16 @@ async function renderSelected() {
     + (serverFilter ? `&server=${encodeURIComponent(serverFilter)}` : '')
     + (traceFilter ? `&trace=${traceFilter}` : '');
   const children = openRoute
-    ? json(`/api/targets/${t.id}/routes/children?method=${openRoute.method}&route=${encodeURIComponent(openRoute.route)}`)
+    ? json(`/api/targets/${t.id}/routes/children?method=${openRoute.method}&route=${encodeURIComponent(openRoute.route)}&${win()}`)
     : Promise.resolve([]);
   const [h, routes, deps, feed, incidents, kids, servers] = await Promise.all([
     json(`/api/targets/${t.id}/history`),
-    json(`/api/targets/${t.id}/routes`),
-    json(`/api/targets/${t.id}/dependencies`),
-    json(`/api/targets/${t.id}/requests?limit=500${f}`),
+    json(`/api/targets/${t.id}/routes?${win()}`),
+    json(`/api/targets/${t.id}/dependencies?${win()}`),
+    json(`/api/targets/${t.id}/requests?limit=500${f}&${win()}`),
     json('/api/incidents'),
     children,
-    json(`/api/targets/${t.id}/servers`),
+    json(`/api/targets/${t.id}/servers?${win()}`),
   ]);
   routeChildren = kids;
   const last = t.last;
@@ -568,16 +590,17 @@ async function refresh() {
     if (!targets.some(t => t.id === selected)) selected = targets[0]?.id;
     renderSites();
     await renderSelected();
-    document.getElementById('updated').textContent = `atualizado ${new Date().toLocaleTimeString('pt-BR')}`;
+    document.getElementById('updated').textContent = `atualizado ${new Date().toLocaleTimeString('pt-BR')}`
+      + (info.source === 'clickhouse' ? ' · ClickHouse' : '');
   } catch (e) {
-    document.getElementById('updated').textContent = 'painel sem conexão com a API';
+    document.getElementById('updated').textContent = e instanceof TypeError ? 'painel sem conexão com a API' : `erro: ${e.message}`;
   } finally {
     busy = false;
   }
 }
 
 window.addEventListener('hashchange', () => selectSite(decodeURIComponent(location.hash.slice(1))));
-refresh();
+loadInfo().then(refresh);
 // Não redesenha enquanto um seletor está aberto/focado (fecharia a lista).
 setInterval(() => { if (document.activeElement?.tagName !== 'SELECT') refresh(); }, 2000);
 </script>
