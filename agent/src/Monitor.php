@@ -34,9 +34,64 @@ final class Monitor
         return array_key_exists($key, self::$config) ? self::$config[$key] : $default;
     }
 
+    /**
+     * Regra do agente: uma falha dele nunca pode chegar ao site. Todo código do agente que roda no fluxo da
+     * requisição passa por guard() ou tem try/catch próprio que chama fail(). A falha vai para o log do PHP
+     * (uma vez por requisição) e a medição daquele ponto é perdida, só isso.
+     */
+    public static function guard($fn, $default = null)
+    {
+        try {
+            return $fn();
+        } catch (Exception $e) {
+            self::fail($e);
+        } catch (Error $e) {
+            self::fail($e);
+        }
+        return $default;
+    }
+
+    /** Registra a falha do agente no log do PHP, no máximo uma vez por requisição. */
+    public static function fail($e)
+    {
+        static $logged = false;
+        if ($logged) {
+            return;
+        }
+        $logged = true;
+        try {
+            @error_log('[monitor] ' . get_class($e) . ': ' . $e->getMessage() . ' em ' . $e->getFile() . ':' . $e->getLine());
+        } catch (Exception $ignored) {
+        } catch (Error $ignored) {
+        }
+    }
+
     public static function newId($bytes)
     {
-        return bin2hex(random_bytes($bytes));
+        try {
+            return bin2hex(random_bytes($bytes));
+        } catch (Exception $e) {
+            // Sem fonte de entropia do sistema: ids só precisam ser únicos, não secretos.
+            return substr(md5(uniqid((string) mt_rand(), true)) . md5((string) mt_rand()), 0, $bytes * 2);
+        } catch (Error $e) {
+            return substr(md5(uniqid((string) mt_rand(), true)) . md5((string) mt_rand()), 0, $bytes * 2);
+        }
+    }
+
+    /** Chave de um handle cURL: recurso no PHP 7, objeto no PHP 8 ((int) de objeto gera aviso). */
+    public static function handleKey($ch)
+    {
+        return is_object($ch) ? spl_object_hash($ch) : (int) $ch;
+    }
+
+    /** Corta texto em caracteres (UTF-8) sem depender da extensão mbstring. */
+    public static function cut($s, $length)
+    {
+        $s = (string) $s;
+        if (function_exists('mb_substr')) {
+            return mb_substr($s, 0, $length, 'UTF-8');
+        }
+        return preg_match('/^.{0,' . (int) $length . '}/us', $s, $m) ? $m[0] : substr($s, 0, $length);
     }
 
     /** Lê o traceparent recebido (chamada vinda de outro sistema monitorado) ou começa um trace novo. */
@@ -67,27 +122,34 @@ final class Monitor
         if (self::$start === null) {
             return;
         }
-        if (count(self::$spans) >= self::config('max_spans', 100)) {
-            self::$dropped++;
-            self::$droppedMs += (microtime(true) - $startedAt) * 1000;
-            return;
+        // Chamado de dentro do código do site (SQL, HTTP, Redis...): nunca pode lançar.
+        try {
+            if (count(self::$spans) >= self::config('max_spans', 100)) {
+                self::$dropped++;
+                self::$droppedMs += (microtime(true) - $startedAt) * 1000;
+                return;
+            }
+            $span = array(
+                'id'     => $spanId ?: self::newId(8),
+                'type'   => $type,
+                'target' => self::utf8($target),
+                'op'     => self::cut(preg_replace('/\s+/', ' ', trim(self::utf8($op))), 500),
+                'start'  => $startedAt,
+                'end'    => microtime(true),
+                'ok'     => (bool) $ok,
+            );
+            if ($error !== null) {
+                $span['error'] = self::cut(self::utf8($error), 300);
+            }
+            if ($detail !== null) {
+                $span['detail'] = $detail;
+            }
+            self::$spans[] = $span;
+        } catch (Exception $e) {
+            self::fail($e);
+        } catch (Error $e) {
+            self::fail($e);
         }
-        $span = array(
-            'id'     => $spanId ?: self::newId(8),
-            'type'   => $type,
-            'target' => self::utf8($target),
-            'op'     => mb_substr(preg_replace('/\s+/', ' ', trim(self::utf8($op))), 0, 500, 'UTF-8'),
-            'start'  => $startedAt,
-            'end'    => microtime(true),
-            'ok'     => (bool) $ok,
-        );
-        if ($error !== null) {
-            $span['error'] = mb_substr(self::utf8($error), 0, 300, 'UTF-8');
-        }
-        if ($detail !== null) {
-            $span['detail'] = $detail;
-        }
-        self::$spans[] = $span;
     }
 
     /** Tempo dos spans que passaram do limite e não foram guardados (entra no total externo). */
@@ -118,10 +180,11 @@ final class Monitor
 
     public static function finalize()
     {
-        foreach (self::$finalizers as $fn) {
-            $fn();
-        }
+        $finalizers = self::$finalizers;
         self::$finalizers = array();
+        foreach ($finalizers as $fn) {
+            self::guard($fn);
+        }
     }
 
     /**
@@ -140,7 +203,18 @@ final class Monitor
     public static function utf8($s)
     {
         $s = (string) $s;
-        return preg_match('//u', $s) ? $s : utf8_encode($s);
+        if (preg_match('//u', $s)) {
+            return $s;
+        }
+        // utf8_encode() vem da extensão xml no PHP 7.0/7.1; mbstring e iconv como alternativas.
+        if (function_exists('utf8_encode')) {
+            return utf8_encode($s);
+        }
+        if (function_exists('mb_convert_encoding')) {
+            return mb_convert_encoding($s, 'UTF-8', 'ISO-8859-1');
+        }
+        $converted = function_exists('iconv') ? @iconv('ISO-8859-1', 'UTF-8', $s) : false;
+        return $converted !== false ? $converted : preg_replace('/[\x80-\xFF]/', '?', $s);
     }
 
     public static function hostOf($url)

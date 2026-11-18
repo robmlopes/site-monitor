@@ -24,6 +24,15 @@ class SqlLogger implements DoctrineSqlLogger
 
     public function startQuery($sql, array $params = null, array $types = null)
     {
+        // Chamado pelo Doctrine antes de cada consulta do site: nunca pode lançar.
+        $self = $this;
+        \Monitor::guard(function () use ($self, $sql) {
+            $self->begin($sql);
+        });
+    }
+
+    public function begin($sql)
+    {
         $this->closePending('sem retorno: consulta lançou exceção');
         $this->pending = array(\Monitor::normalizeSql($sql), microtime(true));
     }

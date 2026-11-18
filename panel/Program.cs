@@ -11,7 +11,9 @@ var contentRoot = File.Exists(Path.Combine(Directory.GetCurrentDirectory(), "app
     : AppContext.BaseDirectory;
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = contentRoot });
 // Sites desta máquina, fora do git. Os alvos se mesclam por posição com os do appsettings.json.
-builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+// Sem reloadOnChange: as opções são lidas uma vez ao iniciar (mudanças valem ao reiniciar o pool), e um arquivo
+// salvo pela metade ou com JSON inválido não pode afetar o painel em execução.
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
 
 builder.Services.Configure<MonitorOptions>(builder.Configuration.GetSection("Monitor"));
 builder.Services.AddSingleton<StatusStore>();
@@ -65,10 +67,17 @@ api.MapPost("/targets/{id}/check", async (string id, StatusStore store, SiteChec
 TimeSpan Window(int? minutes) => TimeSpan.FromMinutes(minutes is > 0 ? minutes.Value : clickHouse.DefaultWindowMinutes);
 
 // ClickHouse fora ou consulta recusada: 503 com a mensagem, para a tela mostrar o motivo.
+// Qualquer outra falha: 500 com a mensagem (a tela mostra "erro: ...") e o detalhe no log, nunca uma página vazia.
 api.AddEndpointFilter(async (ctx, next) =>
 {
     try { return await next(ctx); }
     catch (ClickHouseQueryException ex) { return Results.Problem(ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable); }
+    catch (Exception ex) when (!ctx.HttpContext.RequestAborted.IsCancellationRequested)
+    {
+        ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>()
+            .LogError(ex, "Falha em {Path}", ctx.HttpContext.Request.Path);
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status500InternalServerError);
+    }
 });
 
 api.MapGet("/info", (IRequestSource source) => new

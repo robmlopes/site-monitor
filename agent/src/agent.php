@@ -8,6 +8,20 @@ call_user_func(function () {
     if (PHP_SAPI === 'cli') {
         return;
     }
+    // Falha ao iniciar a medição: o agente fica desligado nesta requisição e o site segue normal.
+    try {
+        monitor_start();
+    } catch (Exception $e) {
+        Monitor::$start = null;
+        Monitor::fail($e);
+    } catch (Error $e) {
+        Monitor::$start = null;
+        Monitor::fail($e);
+    }
+});
+
+function monitor_start()
+{
     $uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/';
     $path = parse_url($uri, PHP_URL_PATH);
     $path = $path ? preg_replace('#/index\.php$#', '/', $path) : '/';
@@ -19,8 +33,16 @@ call_user_func(function () {
     $prefix = Monitor::config('endpoint_prefix', '/_monitor/');
     if (strpos($path, $prefix) === 0) {
         $endpoint = basename($path, '.php');
-        if (in_array($endpoint, array('health', 'traces'), true)) {
-            require MONITOR_HOME . '/src/endpoints/' . $endpoint . '.php';
+        $file = MONITOR_HOME . '/src/endpoints/' . $endpoint . '.php';
+        if (in_array($endpoint, array('health', 'traces'), true) && is_file($file)) {
+            // Endpoint do painel com falha: responde 500 em JSON e para aqui (não cai na aplicação do site).
+            try {
+                require $file;
+            } catch (Exception $e) {
+                monitor_endpoint_failed($e);
+            } catch (Error $e) {
+                monitor_endpoint_failed($e);
+            }
             exit;
         }
     }
@@ -44,13 +66,17 @@ call_user_func(function () {
 
     // Integração Zend Framework 2 (rota, erros, Doctrine, cache, Zend\Http\Client) + shims de funções.
     $root = Monitor::config('app_root');
-    if (is_file($root . '/config/application.config.php') && is_dir($root . '/module')) {
-        require MONITOR_HOME . '/zf2/autoload.php';
-        \Monitor\Zf2\FunctionShims::load(
-            array($root . '/module'),
-            Monitor::siteDir() . '/generated/shims.php',
-            array('Zend\Session' => array('session_start'))
-        );
+    // Falha aqui só desliga a parte ZF2: o resumo da requisição continua sendo medido.
+    if (is_file($root . '/config/application.config.php') && is_dir($root . '/module')
+        && is_file(MONITOR_HOME . '/zf2/autoload.php')) {
+        Monitor::guard(function () use ($root) {
+            require_once MONITOR_HOME . '/zf2/autoload.php';
+            \Monitor\Zf2\FunctionShims::load(
+                array($root . '/module'),
+                Monitor::siteDir() . '/generated/shims.php',
+                array('Zend\Session' => array('session_start'))
+            );
+        });
     }
 
     // CPU do processo: no IIS FastCGI / PHP-FPM cada processo atende uma requisição por vez,
@@ -58,104 +84,128 @@ call_user_func(function () {
     $cpuStart = getrusage();
 
     register_shutdown_function(function () use ($path, $ua, $cpuStart) {
-        Monitor::finalize();
-        $end = microtime(true);
-        $status = http_response_code();
-        $status = $status ? $status : 200;
-        $error = Monitor::$error;
-        $last = error_get_last();
-        if ($last && in_array($last['type'], array(E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR), true)) {
-            $status = 500;
-            $error = strtok($last['message'], "\n");
+        if (Monitor::$start === null) {
+            return;
         }
-
-        $cpu = getrusage();
-        $usage = function ($r, $k) {
-            return $r["ru_$k.tv_sec"] * 1000 + $r["ru_$k.tv_usec"] / 1000;
-        };
-        $cpuUser = max(0, $usage($cpu, 'utime') - $usage($cpuStart, 'utime'));
-        $cpuSys = max(0, $usage($cpu, 'stime') - $usage($cpuStart, 'stime'));
-
-        $extMs = Monitor::$droppedMs;
-        foreach (Monitor::$spans as $s) {
-            $extMs += ($s['end'] - $s['start']) * 1000;
-        }
-        $totalMs = ($end - MONITOR_AGENT_START) * 1000;
-        $calls = count(Monitor::$spans) + Monitor::$dropped;
-
-        // Amostragem: o resumo sempre; as chamadas filhas só se lenta, com erro ou sorteada.
-        $detailed = $status >= 500 || $error !== null || $totalMs >= Monitor::config('slow_ms', 1000)
-            || mt_rand() / mt_getrandmax() < Monitor::config('sample_rate', 1.0);
-
-        $method = isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : 'GET';
-        $route = Monitor::$route ? Monitor::$route : $path;
-        $query = isset($_SERVER['QUERY_STRING']) ? $_SERVER['QUERY_STRING'] : '';
-        $referer = isset($_SERVER['HTTP_REFERER']) ? parse_url($_SERVER['HTTP_REFERER'], PHP_URL_PATH) : null;
-
-        $root = array(
-            'traceId' => Monitor::$traceId,
-            'spanId'  => Monitor::$spanId,
-            'name'    => "$method $route",
-            'kind'    => 2, // SERVER
-            'startTimeUnixNano' => monitor_nanos(MONITOR_AGENT_START),
-            'endTimeUnixNano'   => monitor_nanos($end),
-            'attributes' => monitor_attrs(array(
-                'http.request.method'       => $method,
-                'http.route'                => Monitor::utf8($route),
-                'url.path'                  => Monitor::utf8($path),
-                'url.query'                 => Monitor::utf8(substr($query, 0, 300)),
-                'http.response.status_code' => (int) $status,
-                'client.address'            => isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : null,
-                'user_agent.original'       => Monitor::utf8(substr($ua, 0, 200)),
-                'http.request.header.referer' => $referer ? Monitor::utf8($referer) : null,
-                'monitor.cpu_ms'            => round($cpuUser + $cpuSys, 2),
-                'monitor.cpu_user_ms'       => round($cpuUser, 2),
-                'monitor.cpu_sys_ms'        => round($cpuSys, 2),
-                'monitor.memory.peak'       => memory_get_peak_usage(false),
-                'monitor.memory.reserved'   => memory_get_peak_usage(true),
-                'monitor.ext_ms'            => round($extMs, 2),
-                'monitor.ext_calls'         => $calls,
-                'monitor.detailed'          => $detailed,
-                'monitor.spans_dropped'     => Monitor::$dropped,
-            )),
-            'status' => $error !== null || $status >= 500
-                ? array('code' => 2, 'message' => mb_substr(Monitor::utf8($error !== null ? $error : "HTTP $status"), 0, 300, 'UTF-8'))
-                : array('code' => 0),
-        );
-        if (Monitor::$parentSpanId) {
-            $root['parentSpanId'] = Monitor::$parentSpanId;
-        }
-
-        $spans = array($root);
-        if ($detailed) {
-            foreach (Monitor::$spans as $s) {
-                $spans[] = monitor_otel_span($s);
-            }
-        }
-
-        $line = json_encode(array('resourceSpans' => array(array(
-            'resource' => array('attributes' => monitor_attrs(array(
-                'service.name'           => Monitor::$site,
-                'host.name'              => Monitor::config('server_name'),
-                'process.runtime.name'   => 'php',
-                'process.runtime.version' => PHP_VERSION,
-                'telemetry.sdk.name'     => 'php-monitor',
-                'telemetry.sdk.language' => 'php',
-                'telemetry.sdk.version'  => Monitor::VERSION,
-            ))),
-            'scopeSpans' => array(array(
-                'scope' => array('name' => 'php-monitor', 'version' => Monitor::VERSION),
-                'spans' => $spans,
-            )),
-        ))), JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR);
-
-        $dir = Monitor::siteDir();
-        if (!is_dir($dir)) {
-            @mkdir($dir, 0775, true);
-        }
-        @file_put_contents($dir . '/traces-' . date('Ymd-H') . '.jsonl', $line . "\n", FILE_APPEND | LOCK_EX);
+        // No shutdown, uma exceção não tratada viraria "Fatal error" no fim da página: nada pode escapar daqui.
+        Monitor::guard(function () use ($path, $ua, $cpuStart) {
+            monitor_export($path, $ua, $cpuStart);
+        });
     });
-});
+}
+
+function monitor_endpoint_failed($e)
+{
+    Monitor::fail($e);
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+    }
+    echo json_encode(array('error' => 'monitor', 'message' => $e->getMessage()));
+}
+
+/** Monta o trace da requisição (OTLP/JSON) e grava uma linha no arquivo da hora. */
+function monitor_export($path, $ua, $cpuStart)
+{
+    Monitor::finalize();
+    $end = microtime(true);
+    $status = http_response_code();
+    $status = $status ? $status : 200;
+    $error = Monitor::$error;
+    $last = error_get_last();
+    if ($last && in_array($last['type'], array(E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR), true)) {
+        $status = 500;
+        $error = strtok($last['message'], "\n");
+    }
+
+    $cpu = getrusage();
+    $usage = function ($r, $k) {
+        return $r["ru_$k.tv_sec"] * 1000 + $r["ru_$k.tv_usec"] / 1000;
+    };
+    $cpuUser = max(0, $usage($cpu, 'utime') - $usage($cpuStart, 'utime'));
+    $cpuSys = max(0, $usage($cpu, 'stime') - $usage($cpuStart, 'stime'));
+
+    $extMs = Monitor::$droppedMs;
+    foreach (Monitor::$spans as $s) {
+        $extMs += ($s['end'] - $s['start']) * 1000;
+    }
+    $totalMs = ($end - MONITOR_AGENT_START) * 1000;
+    $calls = count(Monitor::$spans) + Monitor::$dropped;
+
+    // Amostragem: o resumo sempre; as chamadas filhas só se lenta, com erro ou sorteada.
+    $detailed = $status >= 500 || $error !== null || $totalMs >= Monitor::config('slow_ms', 1000)
+        || mt_rand() / mt_getrandmax() < Monitor::config('sample_rate', 1.0);
+
+    $method = isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : 'GET';
+    $route = Monitor::$route ? Monitor::$route : $path;
+    $query = isset($_SERVER['QUERY_STRING']) ? $_SERVER['QUERY_STRING'] : '';
+    $referer = isset($_SERVER['HTTP_REFERER']) ? parse_url($_SERVER['HTTP_REFERER'], PHP_URL_PATH) : null;
+
+    $root = array(
+        'traceId' => Monitor::$traceId,
+        'spanId'  => Monitor::$spanId,
+        'name'    => "$method $route",
+        'kind'    => 2, // SERVER
+        'startTimeUnixNano' => monitor_nanos(MONITOR_AGENT_START),
+        'endTimeUnixNano'   => monitor_nanos($end),
+        'attributes' => monitor_attrs(array(
+            'http.request.method'       => $method,
+            'http.route'                => Monitor::utf8($route),
+            'url.path'                  => Monitor::utf8($path),
+            'url.query'                 => Monitor::utf8(substr($query, 0, 300)),
+            'http.response.status_code' => (int) $status,
+            'client.address'            => isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : null,
+            'user_agent.original'       => Monitor::utf8(substr($ua, 0, 200)),
+            'http.request.header.referer' => $referer ? Monitor::utf8($referer) : null,
+            'monitor.cpu_ms'            => round($cpuUser + $cpuSys, 2),
+            'monitor.cpu_user_ms'       => round($cpuUser, 2),
+            'monitor.cpu_sys_ms'        => round($cpuSys, 2),
+            'monitor.memory.peak'       => memory_get_peak_usage(false),
+            'monitor.memory.reserved'   => memory_get_peak_usage(true),
+            'monitor.ext_ms'            => round($extMs, 2),
+            'monitor.ext_calls'         => $calls,
+            'monitor.detailed'          => $detailed,
+            'monitor.spans_dropped'     => Monitor::$dropped,
+        )),
+        'status' => $error !== null || $status >= 500
+            ? array('code' => 2, 'message' => Monitor::cut(Monitor::utf8($error !== null ? $error : "HTTP $status"), 300))
+            : array('code' => 0),
+    );
+    if (Monitor::$parentSpanId) {
+        $root['parentSpanId'] = Monitor::$parentSpanId;
+    }
+
+    $spans = array($root);
+    if ($detailed) {
+        foreach (Monitor::$spans as $s) {
+            $spans[] = monitor_otel_span($s);
+        }
+    }
+
+    $line = json_encode(array('resourceSpans' => array(array(
+        'resource' => array('attributes' => monitor_attrs(array(
+            'service.name'           => Monitor::$site,
+            'host.name'              => Monitor::config('server_name'),
+            'process.runtime.name'   => 'php',
+            'process.runtime.version' => PHP_VERSION,
+            'telemetry.sdk.name'     => 'php-monitor',
+            'telemetry.sdk.language' => 'php',
+            'telemetry.sdk.version'  => Monitor::VERSION,
+        ))),
+        'scopeSpans' => array(array(
+            'scope' => array('name' => 'php-monitor', 'version' => Monitor::VERSION),
+            'spans' => $spans,
+        )),
+    ))), JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR);
+
+    $dir = Monitor::siteDir();
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0775, true);
+    }
+    if ($line !== false) {
+        @file_put_contents($dir . '/traces-' . date('Ymd-H') . '.jsonl', $line . "\n", FILE_APPEND | LOCK_EX);
+    }
+}
 
 function monitor_nanos($t)
 {
@@ -228,7 +278,7 @@ function monitor_otel_span(array $s)
         'traceId' => Monitor::$traceId,
         'spanId'  => $s['id'],
         'parentSpanId' => Monitor::$spanId,
-        'name'    => mb_substr($name, 0, 120, 'UTF-8'),
+        'name'    => Monitor::cut($name, 120),
         'kind'    => 3, // CLIENT
         'startTimeUnixNano' => monitor_nanos($s['start']),
         'endTimeUnixNano'   => monitor_nanos($s['end']),

@@ -18,18 +18,42 @@ public sealed class RequestCollector(
         var nodes = options.Value.Targets.SelectMany(t => t.AllNodes().Select(n => (t, n))).ToList();
         if (nodes.Count == 0) return;
 
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(options.Value.RequestsIntervalSeconds));
-        do
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(Math.Max(1, options.Value.RequestsIntervalSeconds)));
+        try
         {
-            await Task.WhenAll(nodes.Select(async x =>
+            do
             {
-                try { await PullAsync(x.t, x.n, ct); }
-                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException && !ct.IsCancellationRequested)
+                // Um servidor fora do ar ou respondendo algo inesperado nunca para a leitura dos outros nem o painel.
+                await Task.WhenAll(nodes.Select(async x =>
                 {
-                    logger.LogDebug("Sem traces de {Target}/{Node}: {Error}", x.t.Name, x.n.Name, ex.Message);
-                }
-            }));
-        } while (await timer.WaitForNextTickAsync(ct));
+                    try { await PullAsync(x.t, x.n, ct); }
+                    catch (Exception ex) when (!ct.IsCancellationRequested)
+                    {
+                        if (ex is HttpRequestException or TaskCanceledException)
+                            logger.LogDebug("Sem traces de {Target}/{Node}: {Error}", x.t.Name, x.n.Name, ex.Message);
+                        else
+                            LogUnexpected(x.t.Name, x.n.Name, ex);
+                    }
+                }));
+            } while (await timer.WaitForNextTickAsync(ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+    }
+
+    private readonly Dictionary<string, DateTime> _warnedAt = [];
+
+    /// <summary>Resposta fora do formato, URL inválida...: avisa no máximo a cada 5 min por servidor.</summary>
+    private void LogUnexpected(string target, string node, Exception ex)
+    {
+        var key = target + "/" + node;
+        lock (_warnedAt)
+        {
+            if (_warnedAt.TryGetValue(key, out var at) && DateTime.UtcNow - at < TimeSpan.FromMinutes(5)) return;
+            _warnedAt[key] = DateTime.UtcNow;
+        }
+        logger.LogWarning("Traces de {Target}/{Node} ignorados: {Error}", target, node, ex.Message);
     }
 
     private async Task PullAsync(TargetOptions target, NodeOptions node, CancellationToken ct)

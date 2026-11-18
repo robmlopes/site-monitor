@@ -19,6 +19,15 @@ class ApplicationDelegator implements DelegatorFactoryInterface
     public function createDelegatorWithName(ServiceLocatorInterface $services, $name, $requestedName, $callback)
     {
         $app = $callback();
+        // O Application é do site: se ligar a medição falhar, ele é devolvido como veio.
+        \Monitor::guard(function () use ($app, $services) {
+            self::instrument($app, $services);
+        });
+        return $app;
+    }
+
+    private static function instrument($app, ServiceLocatorInterface $services)
+    {
         $events = $app->getEventManager();
 
         // Aqui o autoloader do Composer já existe; o interceptor precisa ficar na frente dele.
@@ -40,30 +49,34 @@ class ApplicationDelegator implements DelegatorFactoryInterface
         }
 
         $events->attach(MvcEvent::EVENT_ROUTE, function (MvcEvent $e) {
-            $match = $e->getRouteMatch();
-            if (!$match) {
-                return;
-            }
-            $controller = (string) $match->getParam('controller', '?');
-            $controller = str_replace('\\Controller\\', '\\', $controller);
-            \Monitor::$route = $controller . '::' . $match->getParam('action', 'index');
+            \Monitor::guard(function () use ($e) {
+                $match = $e->getRouteMatch();
+                if (!$match) {
+                    return;
+                }
+                $controller = (string) $match->getParam('controller', '?');
+                $controller = str_replace('\\Controller\\', '\\', $controller);
+                \Monitor::$route = $controller . '::' . $match->getParam('action', 'index');
+            });
         }, -10000);
 
         // Só exceções viram erro; "error-router-no-match" etc. já aparecem como 404.
         $onError = function (MvcEvent $e) {
-            $ex = $e->getParam('exception');
-            if ($ex) {
-                \Monitor::$error = get_class($ex) . ': ' . $ex->getMessage();
-            }
+            \Monitor::guard(function () use ($e) {
+                $ex = $e->getParam('exception');
+                if ($ex) {
+                    \Monitor::$error = get_class($ex) . ': ' . $ex->getMessage();
+                }
+            });
         };
         $events->attach(MvcEvent::EVENT_DISPATCH_ERROR, $onError, -10000);
         $events->attach(MvcEvent::EVENT_RENDER_ERROR, $onError, -10000);
 
         // Depois do onBootstrap dos módulos (que criam o cliente Redis).
         $events->attach(MvcEvent::EVENT_BOOTSTRAP, function (MvcEvent $e) {
-            RedisWrapper::wrapCommonRedis($e->getApplication()->getServiceManager());
+            \Monitor::guard(function () use ($e) {
+                RedisWrapper::wrapCommonRedis($e->getApplication()->getServiceManager());
+            });
         }, -10000);
-
-        return $app;
     }
 }

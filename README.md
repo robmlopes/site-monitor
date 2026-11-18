@@ -13,6 +13,9 @@ Foco inicial: sites Zend Framework 2 + Doctrine em PHP 7.0.33 no IIS.
 | `site/`, `servicos/` | site de protótipo e "sistema externo" simulado, para testar sem um site real |
 | `data/` | traces gravados (`data/<site>/traces-AAAAMMDD-HH.jsonl`) — gerado, fora do git |
 
+**Instalação em produção:** guias passo a passo de cada componente em [docs/](docs/README.md): ClickHouse, agente,
+coletor, painel e operação.
+
 ## Rodar o protótipo
 
 ```powershell
@@ -22,6 +25,8 @@ Foco inicial: sites Zend Framework 2 + Doctrine em PHP 7.0.33 no IIS.
 Site: http://localhost:8080 · Serviços simulados: http://127.0.0.1:8070 · Painel: http://localhost:5050
 
 ## Instalar num servidor (sites ZF2)
+
+Resumo abaixo. O passo a passo completo, com permissões e token, está em [docs/2-agente.md](docs/2-agente.md).
 
 1. Copie a pasta `agent/` para o servidor, ex.: `D:\monitor\agent` (e o painel em `D:\monitor\panel`).
    Não é preciso instalar nada no IIS. O pool de aplicação precisa poder gravar em `data_dir`
@@ -135,28 +140,13 @@ Retenção: `TtlDays` (30) para `requests`/`calls`, `RollupTtlDays` (400) para `
 
 ### Instalar
 
-```powershell
-dotnet publish collector -c Release -o D:\monitor\collector
-```
+Passo a passo em [docs/3-coletor.md](docs/3-coletor.md):
+- pacote self-contained;
+- `appsettings.Local.json` com o usuário `monitor_collector`;
+- serviço com a conta virtual `NT SERVICE\MonitorCollector`;
+- permissões em `data\`.
 
-`D:\monitor\collector\appsettings.Local.json` (fora do git):
-
-```json
-{ "Collector": { "DataDir": "..\\data",
-  "ClickHouse": { "Url": "https://clickhouse.interno:8443", "Database": "monitor", "User": "monitor", "Password": "..." } } }
-```
-
-A senha também pode vir da variável de ambiente `MONITOR_CLICKHOUSE_PASSWORD`. Se o usuário não puder criar tabelas,
-rode `schema.sql` à mão (troque `{db}`, `{ttl_days}`, `{rollup_ttl_days}`) e use `"CreateSchema": false`.
-Para não enviar o histórico já gravado na primeira execução: `"StartAtEnd": true`.
-
-```powershell
-sc.exe create MonitorCollector binPath= "D:\monitor\collector\Monitor.Collector.exe" start= delayed-auto
-sc.exe failure MonitorCollector reset= 86400 actions= restart/5000/restart/5000/restart/60000
-sc.exe start MonitorCollector
-```
-
-A conta do serviço precisa ler e gravar em `data\` (estado e `rejected\`). Avisos e erros vão para o Log de Eventos.
+O ClickHouse e os usuários são criados antes, em [docs/1-clickhouse.md](docs/1-clickhouse.md).
 
 ### Testar localmente
 

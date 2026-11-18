@@ -49,6 +49,23 @@ public sealed class Batch : IDisposable
         CallWriter.Flush();
     }
 
+    /// <summary>Posição do lote antes de uma linha (cada linha gravada termina com Flush, então o stream está em dia).</summary>
+    internal (long Requests, long Calls, int RequestCount, int CallCount) Mark() =>
+        (Requests.Length, Calls.Length, RequestCount, CallCount);
+
+    /// <summary>Desfaz o que uma linha escreveu pela metade (objeto JSON incompleto não pode ir ao ClickHouse).</summary>
+    internal void Rollback((long Requests, long Calls, int RequestCount, int CallCount) mark)
+    {
+        RequestWriter.Reset();
+        CallWriter.Reset();
+        Requests.SetLength(mark.Requests);
+        Requests.Position = mark.Requests;
+        Calls.SetLength(mark.Calls);
+        Calls.Position = mark.Calls;
+        RequestCount = mark.RequestCount;
+        CallCount = mark.CallCount;
+    }
+
     public void Dispose()
     {
         RequestWriter.Dispose();
@@ -67,8 +84,27 @@ public static class TraceMapper
     private const int KindServer = 2;
     private const int StatusError = 2;
 
-    /// <summary>Acrescenta a linha ao lote. Devolve false se a linha não for um trace válido.</summary>
+    /// <summary>
+    /// Acrescenta a linha ao lote. Devolve false se a linha não for um trace válido.
+    /// Uma linha com formato inesperado nunca pode travar o arquivo: o que ela já escreveu no lote é desfeito e ela
+    /// conta como inválida.
+    /// </summary>
     public static bool Append(Batch batch, ReadOnlySpan<byte> line, string site, string fallbackServer)
+    {
+        var mark = batch.Mark();
+        try
+        {
+            return AppendUnsafe(batch, line, site, fallbackServer);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            batch.Rollback(mark);
+            batch.BadLines++;
+            return false;
+        }
+    }
+
+    private static bool AppendUnsafe(Batch batch, ReadOnlySpan<byte> line, string site, string fallbackServer)
     {
         JsonDocument doc;
         try { doc = JsonDocument.Parse(line.ToArray()); }

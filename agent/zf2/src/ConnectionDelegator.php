@@ -22,11 +22,14 @@ class ConnectionDelegator implements DelegatorFactoryInterface
     {
         $connection = $callback();
 
-        $config = clone $connection->getConfiguration();
-        $config->setSQLLogger(new SqlLogger(self::target($services, substr($requestedName, strlen(self::PREFIX)))));
-        $prop = new \ReflectionProperty('Doctrine\DBAL\Connection', '_config');
-        $prop->setAccessible(true);
-        $prop->setValue($connection, $config);
+        // A conexão é do site: se a versão do Doctrine não tiver o que esperamos, ela segue sem medição.
+        \Monitor::guard(function () use ($connection, $services, $requestedName) {
+            $config = clone $connection->getConfiguration();
+            $config->setSQLLogger(new SqlLogger(self::target($services, substr($requestedName, strlen(self::PREFIX)))));
+            $prop = new \ReflectionProperty('Doctrine\DBAL\Connection', '_config');
+            $prop->setAccessible(true);
+            $prop->setValue($connection, $config);
+        });
 
         return $connection;
     }
