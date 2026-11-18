@@ -24,23 +24,31 @@ class FunctionShims
     /** Carrega os shims, gerando o arquivo se preciso. $extraNamespaces: namespaces fora de $scanDirs (ex.: vendor). */
     public static function load(array $scanDirs, $outFile, array $extraNamespaces = array())
     {
-        $ttl = \Monitor::config('shims_ttl_hours', 24) * 3600;
-        if (!is_file($outFile) || ($ttl > 0 && filemtime($outFile) < time() - $ttl)) {
-            if (!is_dir(dirname($outFile))) {
-                @mkdir(dirname($outFile), 0775, true);
+        // Falha ao gerar (pasta sem permissão, arquivo ilegível no site): segue com o arquivo existente, se houver.
+        \Monitor::guard(function () use ($scanDirs, $outFile, $extraNamespaces) {
+            $ttl = \Monitor::config('shims_ttl_hours', 24) * 3600;
+            if (!is_file($outFile) || ($ttl > 0 && @filemtime($outFile) < time() - $ttl)) {
+                if (!is_dir(dirname($outFile))) {
+                    @mkdir(dirname($outFile), 0775, true);
+                }
+                // Um processo gera; os outros seguem com o arquivo existente (se houver) enquanto isso.
+                $lock = @fopen($outFile . '.lock', 'c');
+                if ($lock && @flock($lock, LOCK_EX | LOCK_NB)) {
+                    try {
+                        FunctionShims::generate($scanDirs, $outFile, $extraNamespaces);
+                    } finally {
+                        @flock($lock, LOCK_UN);
+                        @fclose($lock);
+                    }
+                } elseif ($lock) {
+                    @fclose($lock);
+                }
             }
-            // Um processo gera; os outros seguem com o arquivo existente (se houver) enquanto isso.
-            $lock = @fopen($outFile . '.lock', 'c');
-            if ($lock && flock($lock, LOCK_EX | LOCK_NB)) {
-                self::generate($scanDirs, $outFile, $extraNamespaces);
-                flock($lock, LOCK_UN);
-            }
-            if ($lock) {
-                fclose($lock);
-            }
-        }
+        });
         if (is_file($outFile)) {
-            require_once $outFile;
+            \Monitor::guard(function () use ($outFile) {
+                require_once $outFile;
+            });
         }
     }
 
@@ -61,8 +69,8 @@ class FunctionShims
                 if ($file->getExtension() !== 'php') {
                     continue;
                 }
-                $code = file_get_contents($file->getPathname());
-                if (!preg_match('/^\s*namespace\s+([\w\\\\]+)\s*;/m', $code, $ns)) {
+                $code = @file_get_contents($file->getPathname());
+                if ($code === false || !preg_match('/^\s*namespace\s+([\w\\\\]+)\s*;/m', $code, $ns)) {
                     continue;
                 }
                 if (preg_match_all($defs, $code, $d)) {
@@ -97,18 +105,23 @@ class FunctionShims
             $out .= "}\n";
         }
 
-        file_put_contents($outFile . '.tmp', $out, LOCK_EX);
-        @unlink($outFile);
+        // Só troca o arquivo se a gravação foi completa: um shims.php pela metade daria erro de sintaxe.
+        if (@file_put_contents($outFile . '.tmp', $out, LOCK_EX) !== strlen($out)) {
+            @unlink($outFile . '.tmp');
+            return;
+        }
         @rename($outFile . '.tmp', $outFile);
     }
 
     /** Abertura de sessão: com save_handler redis/memcached é uma ida ao servidor (e pode esperar lock). */
     public static function sessionStart($options = array())
     {
-        $handler = ini_get('session.save_handler');
-        $first = trim(explode(',', (string) session_save_path())[0]);
-        $url = parse_url(strpos($first, '://') === false ? 'tcp://' . $first : $first);
-        $target = $handler . (empty($url['host']) ? '' : ' ' . $url['host'] . (isset($url['port']) ? ':' . $url['port'] : ''));
+        $target = \Monitor::guard(function () {
+            $handler = ini_get('session.save_handler');
+            $first = trim(explode(',', (string) session_save_path())[0]);
+            $url = parse_url(strpos($first, '://') === false ? 'tcp://' . $first : $first);
+            return $handler . (empty($url['host']) ? '' : ' ' . $url['host'] . (isset($url['port']) ? ':' . $url['port'] : ''));
+        }, 'session');
 
         $t = microtime(true);
         $ok = \session_start($options);

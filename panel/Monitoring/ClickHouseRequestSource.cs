@@ -217,27 +217,23 @@ public sealed class ClickHouseRequestSource(HttpClient http, IOptions<MonitorOpt
             "max_execution_time=" + Opt.TimeoutSeconds,
         };
         qs.AddRange(parameters.Select(kv => $"param_{kv.Key}={Uri.EscapeDataString(kv.Value)}"));
-        var url = new UriBuilder(Opt.Url!) { Path = "/", Query = string.Join('&', qs) };
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, url.Uri) { Content = new StringContent(sql, Encoding.UTF8) };
-        req.Headers.Add("X-ClickHouse-User", Opt.User);
-        var password = Environment.GetEnvironmentVariable("MONITOR_CLICKHOUSE_PASSWORD") ?? Opt.Password;
-        if (password.Length > 0) req.Headers.Add("X-ClickHouse-Key", password);
-
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(TimeSpan.FromSeconds(Opt.TimeoutSeconds + 5));
-        HttpResponseMessage resp;
-        try { resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token); }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        // Toda falha (configuração, rede, timeout, resposta cortada ou fora do formato) vira ClickHouseQueryException:
+        // a API responde 503 com o motivo e a tela mostra "erro: ...". Só o cancelamento do próprio pedido passa direto.
+        try
         {
-            throw new ClickHouseQueryException($"ClickHouse inacessível em {Opt.Url}: {ex.Message}");
-        }
+            var url = new UriBuilder(Opt.Url!) { Path = "/", Query = string.Join('&', qs) };
+            using var req = new HttpRequestMessage(HttpMethod.Post, url.Uri) { Content = new StringContent(sql, Encoding.UTF8) };
+            req.Headers.Add("X-ClickHouse-User", Opt.User);
+            var password = Environment.GetEnvironmentVariable("MONITOR_CLICKHOUSE_PASSWORD") ?? Opt.Password;
+            if (password.Length > 0) req.Headers.Add("X-ClickHouse-Key", password);
 
-        using (resp)
-        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, Opt.TimeoutSeconds) + 5));
+            using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
             if (!resp.IsSuccessStatusCode)
             {
-                var text = await resp.Content.ReadAsStringAsync(ct);
+                var text = await resp.Content.ReadAsStringAsync(cts.Token);
                 throw new ClickHouseQueryException($"ClickHouse HTTP {(int)resp.StatusCode}: {(text.Length > 500 ? text[..500] : text).Trim()}");
             }
 
@@ -250,6 +246,17 @@ public sealed class ClickHouseRequestSource(HttpClient http, IOptions<MonitorOpt
                 rows.Add(new Row(doc.RootElement.Clone()));
             }
             return rows;
+        }
+        catch (Exception ex) when (ex is not ClickHouseQueryException && !ct.IsCancellationRequested)
+        {
+            var reason = ex switch
+            {
+                UriFormatException or ArgumentException => "Monitor:ClickHouse:Url inválida",
+                TaskCanceledException => $"sem resposta em {Opt.TimeoutSeconds + 5}s",
+                JsonException => "resposta fora do formato",
+                _ => "inacessível",
+            };
+            throw new ClickHouseQueryException($"ClickHouse {reason} ({Opt.Url}): {ex.Message}");
         }
     }
 

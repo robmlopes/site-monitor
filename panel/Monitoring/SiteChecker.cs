@@ -39,9 +39,17 @@ public sealed class SiteChecker(IHttpClientFactory httpFactory, StatusStore stor
                     healthStatus = $"HTTP {(int)resp.StatusCode}";
                 }
             }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+            catch (Exception ex) when (!ct.IsCancellationRequested)
             {
-                healthStatus = ex is JsonException ? "json inválido" : "sem resposta";
+                // Qualquer falha do health (sem resposta, JSON inválido, HealthUrl/Token mal configurados) vira estado.
+                healthStatus = ex switch
+                {
+                    JsonException => "json inválido",
+                    InvalidOperationException when healthLatency is not null => "json inválido", // resposta lida, formato errado
+                    HttpRequestException or TaskCanceledException => "sem resposta",
+                    UriFormatException or FormatException or InvalidOperationException => "configuração inválida",
+                    _ => "erro: " + ex.Message,
+                };
             }
         }
 
@@ -65,8 +73,9 @@ public sealed class SiteChecker(IHttpClientFactory httpFactory, StatusStore stor
         {
             return (false, null, sw.Elapsed.TotalMilliseconds, $"timeout ({timeout.TotalSeconds:F0}s)");
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
+            // Site fora, DNS, TLS, URL mal configurada: tudo vira "inacessível" com o motivo, nunca exceção.
             return (false, null, sw.Elapsed.TotalMilliseconds, ex.Message);
         }
     }
@@ -78,20 +87,27 @@ public sealed class PollingService(
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        var interval = TimeSpan.FromSeconds(options.Value.IntervalSeconds);
+        var interval = TimeSpan.FromSeconds(Math.Max(1, options.Value.IntervalSeconds));
         logger.LogInformation("Monitorando {Count} alvo(s) a cada {Interval}s", store.Targets.Count(), interval.TotalSeconds);
 
         using var timer = new PeriodicTimer(interval);
-        do
+        try
         {
-            await Task.WhenAll(store.Targets.Select(async t =>
+            do
             {
-                try { await checker.CheckAsync(t, ct); }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                // Um alvo com falha nunca para a checagem dos outros nem o serviço.
+                await Task.WhenAll(store.Targets.Select(async t =>
                 {
-                    logger.LogError(ex, "Falha inesperada ao checar {Target}", t.Name);
-                }
-            }));
-        } while (await timer.WaitForNextTickAsync(ct));
+                    try { await checker.CheckAsync(t, ct); }
+                    catch (Exception ex) when (!ct.IsCancellationRequested)
+                    {
+                        logger.LogError(ex, "Falha inesperada ao checar {Target}", t.Name);
+                    }
+                }));
+            } while (await timer.WaitForNextTickAsync(ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
     }
 }

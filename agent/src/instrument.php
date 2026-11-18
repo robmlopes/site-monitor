@@ -123,18 +123,30 @@ class MonitorMysqli extends mysqli
  */
 function monitor_curl_exec($ch)
 {
-    $spanId = Monitor::newId(8);
-    $key = (int) $ch;
-    if (Monitor::$start !== null && Monitor::config('propagate') && isset(Monitor::$curlHeaders[$key])) {
-        $headers = array_filter(Monitor::$curlHeaders[$key], function ($h) {
-            return stripos($h, 'traceparent:') !== 0;
-        });
-        $headers[] = 'traceparent: ' . Monitor::traceparent($spanId);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array_values($headers));
-    }
-    curl_setopt($ch, CURLINFO_HEADER_OUT, true); // só para saber o método (GET/POST...) no curl_getinfo
+    // A chamada do site (curl_exec) sempre acontece, uma vez; a medição antes e depois dela é opcional.
+    $spanId = Monitor::guard(function () use ($ch) {
+        $spanId = Monitor::newId(8);
+        $key = Monitor::handleKey($ch);
+        if (Monitor::$start !== null && Monitor::config('propagate') && isset(Monitor::$curlHeaders[$key])) {
+            $headers = array_filter(Monitor::$curlHeaders[$key], function ($h) {
+                return stripos($h, 'traceparent:') !== 0;
+            });
+            $headers[] = 'traceparent: ' . Monitor::traceparent($spanId);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array_values($headers));
+        }
+        curl_setopt($ch, CURLINFO_HEADER_OUT, true); // só para saber o método (GET/POST...) no curl_getinfo
+        return $spanId;
+    });
     $t = microtime(true);
     $result = curl_exec($ch);
+    Monitor::guard(function () use ($ch, $t, $spanId) {
+        monitor_curl_record($ch, $t, $spanId);
+    });
+    return $result;
+}
+
+function monitor_curl_record($ch, $t, $spanId)
+{
     $info = curl_getinfo($ch);
     $errno = curl_errno($ch);
     $code = (int) $info['http_code'];
@@ -162,14 +174,15 @@ function monitor_curl_exec($ch)
         'bytes'   => (int) $info['size_download'],
         'client'  => 'curl',
     ), $spanId);
-    return $result;
 }
 
 /** curl_setopt() via shim: guarda os cabeçalhos do handle para poder acrescentar o traceparent. */
 function monitor_curl_setopt($ch, $option, $value)
 {
     if ($option === CURLOPT_HTTPHEADER) {
-        Monitor::$curlHeaders[(int) $ch] = (array) $value;
+        Monitor::guard(function () use ($ch, $value) {
+            Monitor::$curlHeaders[Monitor::handleKey($ch)] = (array) $value;
+        });
     }
     return curl_setopt($ch, $option, $value);
 }
@@ -177,7 +190,9 @@ function monitor_curl_setopt($ch, $option, $value)
 function monitor_curl_setopt_array($ch, array $options)
 {
     if (array_key_exists(CURLOPT_HTTPHEADER, $options)) {
-        Monitor::$curlHeaders[(int) $ch] = (array) $options[CURLOPT_HTTPHEADER];
+        Monitor::guard(function () use ($ch, $options) {
+            Monitor::$curlHeaders[Monitor::handleKey($ch)] = (array) $options[CURLOPT_HTTPHEADER];
+        });
     }
     return curl_setopt_array($ch, $options);
 }

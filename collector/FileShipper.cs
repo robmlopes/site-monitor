@@ -42,12 +42,33 @@ public sealed class FileShipper(
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
+        try
+        {
+            await RunAsync(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            // Não deveria acontecer (o laço trata as falhas). Se acontecer, um serviço parado e "rodando" seria o pior
+            // caso: encerra o processo com erro para o Windows reiniciar o serviço (sc.exe failure).
+            logger.LogCritical(ex, "Coletor parou por erro inesperado; encerrando para o Windows reiniciar o serviço");
+            Environment.Exit(1);
+        }
+    }
+
+    private async Task RunAsync(CancellationToken ct)
+    {
         _dataDir = Path.GetFullPath(Path.Combine(env.ContentRootPath, Opt.DataDir));
         _stateFile = Opt.StateFile is { Length: > 0 } sf
             ? Path.GetFullPath(Path.Combine(env.ContentRootPath, sf))
             : Path.Combine(_dataDir, "collector-state.json");
         logger.LogInformation("Lendo {DataDir} e enviando para {Url} (estado em {State}; apagar enviados: {Delete})",
             _dataDir, Opt.ClickHouse.Url, _stateFile, Opt.DeleteShipped ? $"após {DeleteAfter.TotalMinutes} min sem gravação" : "não");
+
+        if (!Uri.TryCreate(Opt.ClickHouse.Url, UriKind.Absolute, out var chUrl) || chUrl.Scheme is not ("http" or "https"))
+            logger.LogError("Collector:ClickHouse:Url inválida ({Url}); nada será enviado até corrigir o appsettings.Local.json", Opt.ClickHouse.Url);
 
         LoadState();
 
@@ -65,7 +86,7 @@ public sealed class FileShipper(
                 await ShipAllAsync(ct);
                 backoff = TimeSpan.FromSeconds(5);
                 LogStats();
-                await Task.Delay(TimeSpan.FromSeconds(Opt.PollSeconds), ct);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, Opt.PollSeconds)), ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -83,9 +104,24 @@ public sealed class FileShipper(
     /// <summary>Nunca menos de 61 min: antes disso o agente ainda pode gravar no arquivo da hora.</summary>
     private TimeSpan DeleteAfter => TimeSpan.FromMinutes(Math.Max(61, Opt.DeleteAfterMinutes));
 
+    /// <summary>Limites do lote com piso: valores zerados ou negativos no appsettings travariam o laço.</summary>
+    private int MaxBytes => Math.Max(64 * 1024, Opt.BatchMaxBytes);
+    private int MaxLines => Math.Max(1, Opt.BatchMaxLines);
+
+    private DateTime _missingDirWarnedAt = DateTime.MinValue;
+
     private async Task ShipAllAsync(CancellationToken ct)
     {
-        if (!Directory.Exists(_dataDir)) return;
+        if (!Directory.Exists(_dataDir))
+        {
+            // Sem a pasta não há o que enviar, mas isso costuma ser configuração errada: avisa a cada 30 min.
+            if (DateTime.UtcNow - _missingDirWarnedAt > TimeSpan.FromMinutes(30))
+            {
+                _missingDirWarnedAt = DateTime.UtcNow;
+                logger.LogWarning("Pasta de dados {DataDir} não existe (ou sem acesso); confira Collector:DataDir e a data_dir do agente", _dataDir);
+            }
+            return;
+        }
 
         var files = Directory.EnumerateDirectories(_dataDir)
             .SelectMany(d => Directory.EnumerateFiles(d, "traces-*.jsonl"))
@@ -99,23 +135,45 @@ public sealed class FileShipper(
 
         foreach (var file in files)
         {
+            var key = Key(file);
+            if (_skipUntil.TryGetValue(key, out var skip) && DateTime.UtcNow < skip) continue;
             try
             {
                 // Esvazia o arquivo antes de passar ao próximo (ordem cronológica por site).
                 while (await ShipChunkAsync(file, ct)) { }
                 if (Opt.DeleteShipped) await DeleteIfDoneAsync(file, ct);
-            }
-            catch (IOException ex) when (ex is not FileNotFoundException and not DirectoryNotFoundException)
-            {
-                // O agente grava com LOCK_EX: leitura no mesmo instante falha; tenta no próximo ciclo.
-                logger.LogDebug("{File} ocupado ({Error}); tenta no próximo ciclo", Key(file), ex.Message);
+                _skipUntil.Remove(key);
             }
             catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
             {
-                _files.Remove(Key(file));
+                _files.Remove(key);
+            }
+            catch (IOException ex) when (IsSharingViolation(ex))
+            {
+                // O agente grava com LOCK_EX: leitura no mesmo instante falha; tenta no próximo ciclo.
+                logger.LogDebug("{File} ocupado ({Error}); tenta no próximo ciclo", key, ex.Message);
+            }
+            catch (Exception ex) when (!IsClickHouseFailure(ex, ct))
+            {
+                // Problema só deste arquivo (permissão, disco, estado): os outros arquivos seguem sendo enviados.
+                // O ClickHouse fora do ar, ao contrário, sobe para o laço principal (espera crescente).
+                _skipUntil[key] = DateTime.UtcNow.AddMinutes(1);
+                logger.LogWarning("{File}: {Error}; arquivo pulado, nova tentativa em 1 min", key, ex.Message);
             }
         }
     }
+
+    /// <summary>Arquivos com falha própria (sem permissão, disco cheio...): não tenta de novo antes deste horário.</summary>
+    private readonly Dictionary<string, DateTime> _skipUntil = new(StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsSharingViolation(IOException ex) =>
+        (ex.HResult & 0xFFFF) is 32 or 33; // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION
+
+    /// <summary>Falha de comunicação com o ClickHouse (vale para todos os arquivos, não só para um).</summary>
+    private static bool IsClickHouseFailure(Exception ex, CancellationToken ct) =>
+        ex is HttpRequestException or ClickHouseException or UriFormatException
+        || (ex is OperationCanceledException && !ct.IsCancellationRequested) // timeout da requisição
+        || ct.IsCancellationRequested;
 
     /// <summary>Envia um lote do arquivo. Devolve true se ainda há linhas completas para enviar.</summary>
     private async Task<bool> ShipChunkAsync(string file, CancellationToken ct)
@@ -141,7 +199,7 @@ public sealed class FileShipper(
                 return false;
             }
 
-            buffer = new byte[(int)Math.Min(Opt.BatchMaxBytes, fs.Length - offset)];
+            buffer = new byte[(int)Math.Min(MaxBytes, fs.Length - offset)];
             fs.Seek(offset, SeekOrigin.Begin);
             read = await fs.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false, ct);
         }
@@ -150,7 +208,7 @@ public sealed class FileShipper(
         using var batch = new Batch();
         var consumed = 0;
         var lines = 0;
-        while (lines < Opt.BatchMaxLines)
+        while (lines < MaxLines)
         {
             var nl = data[consumed..].IndexOf((byte)'\n');
             if (nl < 0) break; // linha ainda sendo escrita
@@ -163,8 +221,8 @@ public sealed class FileShipper(
 
         if (consumed == 0)
         {
-            if (read < Opt.BatchMaxBytes) return false; // espera o resto da linha
-            logger.LogWarning("{File}: linha maior que {Max} bytes no offset {Offset}; descartada", key, Opt.BatchMaxBytes, offset);
+            if (read < MaxBytes) return false; // espera o resto da linha
+            logger.LogWarning("{File}: linha maior que {Max} bytes no offset {Offset}; descartada", key, MaxBytes, offset);
             consumed = read;
         }
 
@@ -193,7 +251,7 @@ public sealed class FileShipper(
         _sentRequests += batch.RequestCount;
         _sentCalls += batch.CallCount;
         _badLines += batch.BadLines;
-        return consumed < read || lines >= Opt.BatchMaxLines || read == Opt.BatchMaxBytes;
+        return consumed < read || lines >= MaxLines || read == MaxBytes;
     }
 
     /// <summary>
@@ -286,17 +344,28 @@ public sealed class FileShipper(
                 logger.LogInformation("Estado carregado: {Count} arquivo(s)", _files.Count);
                 return;
             }
-            catch (Exception ex) when (ex is JsonException or IOException or InvalidOperationException)
+            catch (Exception ex)
             {
+                // Recomeçar é seguro: o que for reenviado é descartado pelo token de deduplicação do ClickHouse.
+                _files.Clear();
                 logger.LogWarning("Estado ilegível em {State} ({Error}); começando de novo", _stateFile, ex.Message);
             }
         }
 
-        if (Opt.StartAtEnd && Directory.Exists(_dataDir))
+        if (Opt.StartAtEnd)
         {
-            foreach (var f in Directory.EnumerateDirectories(_dataDir).SelectMany(d => Directory.EnumerateFiles(d, "traces-*.jsonl")))
-                _files[Key(f)] = new FileState { Offset = new FileInfo(f).Length, Requests = null };
-            logger.LogInformation("Primeira execução com StartAtEnd: ignorando o histórico de {Count} arquivo(s)", _files.Count);
+            try
+            {
+                if (Directory.Exists(_dataDir))
+                    foreach (var f in Directory.EnumerateDirectories(_dataDir).SelectMany(d => Directory.EnumerateFiles(d, "traces-*.jsonl")))
+                        _files[Key(f)] = new FileState { Offset = new FileInfo(f).Length, Requests = null };
+                logger.LogInformation("Primeira execução com StartAtEnd: ignorando o histórico de {Count} arquivo(s)", _files.Count);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning("StartAtEnd: não foi possível listar {DataDir} ({Error}); os arquivos serão enviados desde o início",
+                    _dataDir, ex.Message);
+            }
         }
     }
 

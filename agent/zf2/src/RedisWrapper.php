@@ -35,35 +35,44 @@ class RedisWrapper implements DelegatorFactoryInterface
     public function createDelegatorWithName(ServiceLocatorInterface $services, $name, $requestedName, $callback)
     {
         $service = $callback();
+        // O serviço de cache é do site: se ligar a medição falhar, ele é devolvido como veio.
+        \Monitor::guard(function () use ($service, $services) {
+            self::listen($service, $services);
+        });
+        return $service;
+    }
+
+    private static function listen($service, ServiceLocatorInterface $services)
+    {
         $storage = self::findStorage($service);
         if (!$storage) {
-            return $service;
+            return;
         }
         $target = self::target($services) . ' (cache)';
         $started = array();
 
         $events = $storage->getEventManager();
         $events->attach('*', function ($e) use ($target, &$started) {
-            $name = $e->getName();
-            $dot = strrpos($name, '.');
-            if ($dot === false) {
-                return;
-            }
-            $op = substr($name, 0, $dot);
-            $phase = substr($name, $dot + 1);
-            if ($phase === 'pre') {
-                $started[$op][] = microtime(true);
-            } elseif (($phase === 'post' || $phase === 'exception') && !empty($started[$op])) {
-                $t = array_pop($started[$op]);
-                $error = null;
-                if ($phase === 'exception' && method_exists($e, 'getException')) {
-                    $error = $e->getException()->getMessage();
+            \Monitor::guard(function () use ($e, $target, &$started) {
+                $name = $e->getName();
+                $dot = strrpos($name, '.');
+                if ($dot === false) {
+                    return;
                 }
-                \Monitor::record('redis', $target, $op, $t, $phase === 'post', $error);
-            }
+                $op = substr($name, 0, $dot);
+                $phase = substr($name, $dot + 1);
+                if ($phase === 'pre') {
+                    $started[$op][] = microtime(true);
+                } elseif (($phase === 'post' || $phase === 'exception') && !empty($started[$op])) {
+                    $t = array_pop($started[$op]);
+                    $error = null;
+                    if ($phase === 'exception' && method_exists($e, 'getException') && $e->getException()) {
+                        $error = $e->getException()->getMessage();
+                    }
+                    \Monitor::record('redis', $target, $op, $t, $phase === 'post', $error);
+                }
+            });
         }, 10000);
-
-        return $service;
     }
 
     /**

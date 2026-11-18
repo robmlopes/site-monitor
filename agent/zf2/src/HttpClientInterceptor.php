@@ -25,21 +25,40 @@ class HttpClientInterceptor
             if ($class !== HttpClientInterceptor::CLIENT) {
                 return;
             }
-            $copy = $cacheDir . '/ZendHttpMonitorOriginalClient-' . md5($source) . '.php';
-            if (!is_file($copy) || filemtime($copy) < filemtime($source)) {
-                $code = preg_replace('/^class Client\b/m', 'class MonitorOriginalClient', file_get_contents($source), 1, $count);
-                if ($count !== 1) {
-                    return; // formato inesperado: deixa o Composer carregar a original
-                }
-                if (!is_dir($cacheDir)) {
-                    @mkdir($cacheDir, 0775, true);
-                }
-                file_put_contents($copy . '.tmp', $code, LOCK_EX);
-                @rename($copy . '.tmp', $copy);
-            }
-            require_once $copy;
-            require_once __DIR__ . '/MonitoredHttpClient.php';
+            // Qualquer falha aqui (pasta sem permissão, cópia corrompida): não define a classe e o Composer
+            // carrega a original logo em seguida. O site usa o Zend\Http\Client normal, só sem medição.
+            \Monitor::guard(function () use ($source, $cacheDir) {
+                HttpClientInterceptor::loadMonitored($source, $cacheDir);
+            });
         }, true, true);
+    }
+
+    public static function loadMonitored($source, $cacheDir)
+    {
+        $copy = $cacheDir . '/ZendHttpMonitorOriginalClient-' . md5($source) . '.php';
+        if (!is_file($copy) || @filemtime($copy) < @filemtime($source)) {
+            $original = @file_get_contents($source);
+            if ($original === false) {
+                return;
+            }
+            $code = preg_replace('/^class Client\b/m', 'class MonitorOriginalClient', $original, 1, $count);
+            if ($count !== 1) {
+                return; // formato inesperado: deixa o Composer carregar a original
+            }
+            if (!is_dir($cacheDir)) {
+                @mkdir($cacheDir, 0775, true);
+            }
+            if (@file_put_contents($copy . '.tmp', $code, LOCK_EX) !== strlen($code) || !@rename($copy . '.tmp', $copy)) {
+                @unlink($copy . '.tmp');
+                return;
+            }
+        }
+        // require de arquivo inexistente é erro fatal (não dá para capturar): confere antes.
+        if (!is_file($copy) || !is_file(__DIR__ . '/MonitoredHttpClient.php')) {
+            return;
+        }
+        require_once $copy;
+        require_once __DIR__ . '/MonitoredHttpClient.php';
     }
 
     /** Pergunta ao autoloader do Composer onde está o arquivo da classe. */
