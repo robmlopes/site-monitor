@@ -53,12 +53,12 @@ class HttpClientInterceptor
                 return;
             }
         }
-        // require de arquivo inexistente é erro fatal (não dá para capturar): confere antes.
-        if (!is_file($copy) || !is_file(__DIR__ . '/MonitoredHttpClient.php')) {
+        // Arquivo ausente ou sem permissão de leitura: sem interceptação, e o Composer carrega a classe original.
+        if (!is_readable($copy) || !is_readable(__DIR__ . '/MonitoredHttpClient.php')) {
             return;
         }
-        require_once $copy;
-        require_once __DIR__ . '/MonitoredHttpClient.php';
+        \monitor_include($copy, true);
+        \monitor_include(__DIR__ . '/MonitoredHttpClient.php', true);
     }
 
     /** Pergunta ao autoloader do Composer onde está o arquivo da classe. */

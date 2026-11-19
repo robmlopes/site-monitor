@@ -3,7 +3,7 @@
  * Health do servidor PHP para o painel: versão, memória, disco, OPcache, sessão e o próprio agente.
  */
 
-require __DIR__ . '/auth.php';
+monitor_include(__DIR__ . '/auth.php');
 $config = array('db' => Monitor::config('health_db'), 'writable' => array(Monitor::config('data_dir')));
 
 $started = microtime(true);

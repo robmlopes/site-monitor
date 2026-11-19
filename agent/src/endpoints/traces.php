@@ -6,7 +6,7 @@
  * Também apaga arquivos mais antigos que retention_hours.
  */
 
-require __DIR__ . '/auth.php';
+monitor_include(__DIR__ . '/auth.php');
 
 $dir = Monitor::siteDir();
 $maxLines = 500;

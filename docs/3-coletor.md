@@ -64,7 +64,9 @@ A senha também pode vir da variável de ambiente `MONITOR_CLICKHOUSE_PASSWORD`,
 
 ## 4. Confiar no certificado do ClickHouse
 
-- **Certificado da CA interna:** nada a fazer, porque o Windows já confia nela.
+- **Certificado de uma CA interna que o Windows já confia** (CA do domínio): nada a fazer.
+- **Certificado de uma CA interna que o Windows não conhece** (por exemplo, a de um ingress privado no Kubernetes):
+  importe o certificado **público** da CA, como abaixo. A chave privada da CA nunca vai para o servidor.
 - **Certificado autoassinado** (guia 1, passo 4): copie o `server.crt` da VM e importe:
 
 ```powershell

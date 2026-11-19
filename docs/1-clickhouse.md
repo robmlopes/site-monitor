@@ -1,5 +1,19 @@
 # 1. ClickHouse (VM Linux central)
 
+> **Também roda em Kubernetes.** Um `StatefulSet` de uma réplica, com volume persistente, usa a imagem
+> `clickhouse/clickhouse-server:25.8`. Use o nome completo `docker.io/...` em runtimes que recusam nome curto, como o
+> CRI-O. O que este guia faz na VM vira, no cluster:
+> - **Configuração:** ConfigMaps em `config.d` e `users.d`. As senhas vêm de um Secret, lidas com `from_env`.
+> - **Schema:** o `schema.sql` vai em `/docker-entrypoint-initdb.d` e roda só no primeiro boot.
+> - **Rede:** um Service interno, para quem lê de dentro do cluster, e um ingress HTTPS para os coletores. Use, de
+>   preferência, um ingress **privado**, sem URL pública.
+> - **Lotes do coletor:** o ingress precisa de `nginx.ingress.kubernetes.io/proxy-body-size: "16m"`, porque os lotes
+>   chegam a 8 MB e o padrão do nginx é 1 MB. Sem isso, os lotes grandes voltam 413.
+> - **Certificado:** se o certificado do ingress é de uma CA interna, cada servidor web precisa confiar nela (guia 3,
+>   passo 4).
+>
+> Os usuários e as permissões são os mesmos do passo 6.
+
 O ClickHouse guarda os traces de todos os servidores. Ele **não roda nativamente no Windows**, por isso fica numa
 VM Linux. O exemplo usa Oracle Linux 9 na OCI, na mesma região dos servidores web; para Ubuntu, veja o fim do passo 2.
 Versão testada: **25.8 (LTS)**.

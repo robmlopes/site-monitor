@@ -4,7 +4,7 @@ Guias passo a passo para instalar cada componente. Siga na ordem: cada etapa usa
 
 | # | Guia | Onde | Quem faz |
 |---|---|---|---|
-| 1 | [ClickHouse](1-clickhouse.md) | uma VM Linux central | infraestrutura |
+| 1 | [ClickHouse](1-clickhouse.md) | uma VM Linux central ou um cluster Kubernetes | infraestrutura |
 | 2 | [Agente PHP](2-agente.md) | cada servidor web (Windows/IIS) e cada site | infraestrutura + time do site |
 | 3 | [Coletor](3-coletor.md) | cada servidor web (serviço do Windows) | infraestrutura |
 | 4 | [Painel](4-painel.md) | um servidor Windows com IIS | infraestrutura |

@@ -47,7 +47,7 @@ class FunctionShims
         });
         if (is_file($outFile)) {
             \Monitor::guard(function () use ($outFile) {
-                require_once $outFile;
+                \monitor_include($outFile, true);
             });
         }
     }

@@ -37,6 +37,8 @@ GROUP BY Server HAVING ultima < now() - INTERVAL 15 MINUTE;
 | Sintoma | Causa provável | O que fazer |
 |---|---|---|
 | Nenhum arquivo em `data\<site>\` | `.user.ini` não aplicado, ou pool sem permissão em `data\` | guia 2, "Conferir"; procure linhas `[monitor]` no log de erros do PHP |
+| `[monitor] ... sem permissão de leitura: ...config.local.php` | o PHP lê como `IUSR` (`fastcgi.impersonate = 1`) e o arquivo só libera `IIS_IUSRS` | `icacls D:\monitor\agent\config.local.php /grant "IUSR:R"` (guia 2, A3) |
+| Nenhuma linha no log do PHP, nem de erro | a pasta do `error_log` do `php.ini` não existe, e o PHP não grava | crie a pasta e dê permissão de gravação a `IIS_IUSRS` e `IUSR` |
 | Linhas `[monitor] ...` no log do PHP | falha do agente. O site não é afetado, só a medição daquela requisição | a mensagem diz o arquivo e o motivo (guia 2, "Se o agente falhar") |
 | Aviso `arquivo pulado, nova tentativa em 1 min` | aquele arquivo está sem permissão ou o disco está cheio. Os demais seguem | conferir as permissões de `data\` (guia 3, passo 6) |
 | Arquivos acumulam e `Offset` não anda | coletor parado ou sem acesso ao ClickHouse | Log de Eventos (`Monitor.Collector`); `Invoke-RestMethod https://clickhouse.interno:8443/ping` |

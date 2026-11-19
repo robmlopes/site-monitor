@@ -5,7 +5,9 @@ spl_autoload_register(function ($class) {
         return;
     }
     $file = __DIR__ . '/src/' . str_replace('\\', '/', substr($class, strlen('Monitor\\Zf2\\'))) . '.php';
-    if (is_file($file)) {
-        require $file;
+    // Roda no fluxo do site (o monitor.local.php pergunta class_exists): arquivo ausente ou sem permissão de leitura
+    // deixa a classe indefinida, e o site segue sem a integração. Nunca require, que daria erro fatal.
+    if (is_file($file) && is_readable($file)) {
+        @include $file;
     }
 });

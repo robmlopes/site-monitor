@@ -15,9 +15,12 @@ call_user_func(function () {
     foreach (array(getenv('MONITOR_HOME'), get_cfg_var('monitor.home'), __DIR__,
         'D:/monitor/agent', 'C:/monitor/agent') as $home) {
         if ($home && is_file($file = rtrim($home, '\\/') . '/prepend.php')) {
-            // Um prepend.php com erro (atualização pela metade) não pode derrubar o site.
+            // Um prepend.php com erro (atualização pela metade) não pode derrubar o site. include, não require: um
+            // arquivo sem permissão de leitura (IIS lendo como IUSR) faria o require dar erro fatal.
             try {
-                require $file;
+                if (!is_readable($file) || (@include $file) === false) {
+                    @error_log('[monitor] agente sem permissão de leitura, desligado: ' . $file);
+                }
             } catch (Exception $e) {
                 @error_log('[monitor] falha ao carregar o agente: ' . $e->getMessage());
             } catch (Error $e) {
