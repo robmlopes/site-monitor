@@ -37,7 +37,7 @@ function monitor_start()
         if (in_array($endpoint, array('health', 'traces'), true) && is_file($file)) {
             // Endpoint do painel com falha: responde 500 em JSON e para aqui (não cai na aplicação do site).
             try {
-                require $file;
+                monitor_include($file);
             } catch (Exception $e) {
                 monitor_endpoint_failed($e);
             } catch (Error $e) {
@@ -70,7 +70,7 @@ function monitor_start()
     if (is_file($root . '/config/application.config.php') && is_dir($root . '/module')
         && is_file(MONITOR_HOME . '/zf2/autoload.php')) {
         Monitor::guard(function () use ($root) {
-            require_once MONITOR_HOME . '/zf2/autoload.php';
+            monitor_include(MONITOR_HOME . '/zf2/autoload.php', true);
             \Monitor\Zf2\FunctionShims::load(
                 array($root . '/module'),
                 Monitor::siteDir() . '/generated/shims.php',

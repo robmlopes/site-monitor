@@ -27,13 +27,18 @@ Se você usar a pasta padrão, não precisa configurar nada.
 
 ### A2. Permissões
 
-O IIS só lê o agente. O agente grava em `data\` com a identidade do pool de cada site, e todos os pools fazem parte do grupo
-`IIS_IUSRS`:
+O IIS só lê o agente, e o agente grava em `data\`. Quem lê e grava depende do `fastcgi.impersonate` do `php.ini`:
+- `fastcgi.impersonate = 1`, o padrão no IIS: o PHP age como o usuário anônimo, `IUSR`;
+- `0`: o PHP age com a identidade do pool, que faz parte do grupo `IIS_IUSRS`.
+
+Dê permissão aos dois:
 
 ```powershell
-icacls D:\monitor\agent /grant "IIS_IUSRS:(OI)(CI)RX"
-icacls D:\monitor\data  /grant "IIS_IUSRS:(OI)(CI)M"
+icacls D:\monitor\agent /grant "IIS_IUSRS:(OI)(CI)RX" "IUSR:(OI)(CI)RX"
+icacls D:\monitor\data  /grant "IIS_IUSRS:(OI)(CI)M"  "IUSR:(OI)(CI)M"
 ```
+
+Para conferir: `Select-String -Path "C:\Program Files\PHP\v7.0\php.ini" -Pattern '^\s*fastcgi\.impersonate'`.
 
 ### A3. Configuração do servidor (`config.local.php`)
 
@@ -68,8 +73,15 @@ Para gerar um token:
 Restrinja a leitura, porque o arquivo tem o token:
 
 ```powershell
-icacls D:\monitor\agent\config.local.php /inheritance:r /grant:r "Administrators:F" "SYSTEM:F" "IIS_IUSRS:R"
+icacls D:\monitor\agent\config.local.php /inheritance:r /grant:r "Administrators:F" "SYSTEM:F" "IIS_IUSRS:R" "IUSR:R"
 ```
+
+**Não esqueça o `IUSR`.** Com `fastcgi.impersonate = 1` no `php.ini`, que é o padrão do PHP no IIS, o PHP lê os
+arquivos como o usuário anônimo `IUSR`, e não como o pool. `IIS_IUSRS` sozinho não basta. Encontrado num servidor de homologação:
+sem o `IUSR`, o agente desliga e cada requisição registra
+`[monitor] agente desligado nesta requisição: ... sem permissão de leitura: ...config.local.php` no log do PHP.
+
+Em versões anteriores do agente, o mesmo caso derrubava o site com erro 500.
 
 ## Parte B: em cada site ZF2
 
@@ -112,7 +124,8 @@ Se nenhum arquivo aparecer:
 
 O agente nunca derruba o site. Se algo der errado com ele, a medição daquela requisição é perdida, e só isso.
 Isso vale para:
-- arquivo do agente ausente ou com erro;
+- arquivo do agente ausente, com erro ou sem permissão de leitura (todo arquivo do agente entra por `monitor_include()`,
+  nunca por `require`, que daria erro fatal);
 - `config.local.php` inválido;
 - pasta `data` sem permissão;
 - versão do Doctrine ou do Redis diferente da esperada;
@@ -131,7 +144,12 @@ O site respondeu normalmente nestes casos:
 - `data_dir` inexistente;
 - `agent.php` ausente;
 - erro de sintaxe em `Monitor.php`, `instrument.php` ou `prepend.php`;
+- `config.local.php`, `Monitor.php`, `agent.php` ou `prepend.php` sem permissão de leitura;
 - agente removido.
+
+Também testado no IIS de um servidor de homologação (PHP 7.0, `fastcgi.impersonate = 1`): com o `IUSR` sem leitura no
+`config.local.php`, os sites responderam normalmente. Nesse ambiente o `is_readable()` do PHP devolveu `true` mesmo sem
+permissão, e quem pegou a falha foi o `include` devolvendo `false`.
 
 ## Remover de um site ou servidor
 
